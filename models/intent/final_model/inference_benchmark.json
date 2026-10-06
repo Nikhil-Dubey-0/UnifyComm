@@ -1,0 +1,8 @@
+{
+  "avg_ms": 11.17670233998524,
+  "median_ms": 10.54850999980772,
+  "p95_ms": 13.679531900197615,
+  "throughput_msgs_per_sec": 89.47182895105361,
+  "num_samples": 200,
+  "device": "cuda"
+}

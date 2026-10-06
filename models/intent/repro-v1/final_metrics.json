@@ -1,0 +1,30 @@
+{
+  "version_name": "repro-v1",
+  "dry_run": false,
+  "banking77_test": {
+    "accuracy": 0.8808441558441559,
+    "macro_f1": 0.7048277730952187,
+    "macro_f1_true_labels": 0.8878999219511194,
+    "weighted_f1": 0.8878999219511196,
+    "n": 3080
+  },
+  "clinc150_test": {
+    "accuracy": 0.7863636363636364,
+    "macro_f1": 0.6527514891484911,
+    "macro_f1_true_labels": 0.8539420166257657,
+    "weighted_f1": 0.7680270401558025,
+    "n": 5500
+  },
+  "clinc150_oos_recall": 0.227,
+  "banking77_test_stage1_77way": {
+    "accuracy": 0.8402597402597403,
+    "macro_f1": 0.8318633497856182,
+    "macro_f1_true_labels": 0.8318633497856182,
+    "weighted_f1": 0.8318633497856184,
+    "n": 3080
+  },
+  "regression_delta_banking77": 0.04058441558441561,
+  "stage1_best_epoch": 5,
+  "stage2_best_epoch": 5,
+  "golden_matches": "6/6"
+}

@@ -1,0 +1,11 @@
+{
+  "banking77_accuracy_session1": 0.8561688311688311,
+  "banking77_accuracy_session2": 0.884090909090909,
+  "banking77_macro_f1": 0.7281089053317494,
+  "banking77_weighted_f1": 0.8888602220933045,
+  "clinc150_accuracy": 0.8567272727272728,
+  "clinc150_macro_f1": 0.72888910522164,
+  "clinc150_weighted_f1": 0.8514702715647106,
+  "num_unified_labels": 213,
+  "regression_delta": 0.027922077922077904
+}

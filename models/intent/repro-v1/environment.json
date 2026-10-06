@@ -1,0 +1,16 @@
+{
+  "torch": "2.11.0+cu130",
+  "transformers": "5.18.0",
+  "device": "Tesla T4",
+  "datasets": {
+    "banking77": [
+      "legacy-datasets/banking77",
+      "f54121560de48f2852f90be299010d1d6dc612ec"
+    ],
+    "clinc150": [
+      "clinc/clinc_oos",
+      "plus",
+      "155b9c710419136e17307b80d0a13e68cd46b4ec"
+    ]
+  }
+}

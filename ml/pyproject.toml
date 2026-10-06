@@ -1,0 +1,26 @@
+[project]
+name = "unifycomm-ml"
+version = "0.1.0"
+description = "Intent model retraining (Plan B). Real training runs in Google Colab; this env is for CPU dry runs and verifying exports."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "torch>=2.14",
+    "transformers==5.18.0",
+    "datasets>=3.0",
+    "scikit-learn>=1.5",
+    "safetensors>=0.4",
+    "numpy>=2.0",
+    "truststore>=0.10.4",
+]
+
+[tool.uv]
+package = false
+native-tls = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

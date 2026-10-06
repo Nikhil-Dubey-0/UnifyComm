@@ -1,0 +1,281 @@
+# Intent label → routing category (ARCHITECTURE §7.3).
+# Every one of the 213 labels in models/intent/repro-v1/id2label.json appears exactly once.
+# tests/unit/test_intent_map.py enforces this contract.
+#
+# Category flags:
+#   queue:       name shown in the agent UI (null = no queue)
+#   substantive: false means messages in this category never set or change a
+#                conversation's category or primary intent (§7.4)
+#   default_priority: priority before the sentiment raise (§7.5)
+
+categories:
+  fraud_security:
+    queue: Fraud & Security
+    substantive: true
+    default_priority: urgent
+  payments_billing:
+    queue: Payments & Billing
+    substantive: true
+    default_priority: normal
+  transfers_topups:
+    queue: Transfers & Top-ups
+    substantive: true
+    default_priority: normal
+  cards:
+    queue: Cards
+    substantive: true
+    default_priority: normal
+  account_access:
+    queue: Account & Identity
+    substantive: true
+    default_priority: normal
+  loans_credit:
+    queue: Loans & Credit
+    substantive: true
+    default_priority: normal
+  general_banking:
+    queue: General
+    substantive: true
+    default_priority: low
+  small_talk:
+    queue: null
+    substantive: false
+    default_priority: low
+  out_of_scope:
+    queue: Other
+    substantive: false
+    default_priority: low
+
+labels:
+  fraud_security:
+    - card_payment_not_recognised
+    - cash_withdrawal_not_recognised
+    - compromised_card
+    - direct_debit_payment_not_recognised
+    - lost_or_stolen_card
+    - lost_or_stolen_phone
+    - report_fraud
+
+  payments_billing:
+    - Refund_not_showing_up
+    - card_payment_fee_charged
+    - card_payment_wrong_exchange_rate
+    - cash_withdrawal_charge
+    - declined_card_payment
+    - declined_cash_withdrawal
+    - exchange_charge
+    - extra_charge_on_statement
+    - pending_card_payment
+    - pending_cash_withdrawal
+    - request_refund
+    - reverted_card_payment?
+    - transaction_charged_twice
+    - wrong_amount_of_cash_received
+    - wrong_exchange_rate_for_cash_withdrawal
+
+  transfers_topups:
+    - automatic_top_up
+    - balance_not_updated_after_bank_transfer
+    - balance_not_updated_after_cheque_or_cash_deposit
+    - beneficiary_not_allowed
+    - cancel_transfer
+    - declined_transfer
+    - failed_transfer
+    - pending_top_up
+    - pending_transfer
+    - receiving_money
+    - top_up_by_bank_transfer_charge
+    - top_up_by_card_charge
+    - top_up_by_cash_or_cheque
+    - top_up_failed
+    - top_up_limits
+    - top_up_reverted
+    - topping_up_by_card
+    - transfer_fee_charged
+    - transfer_into_account
+    - transfer_not_received_by_recipient
+    - transfer_timing
+    - verify_top_up
+
+  cards:
+    - activate_my_card
+    - apple_pay_or_google_pay
+    - atm_support
+    - card_about_to_expire
+    - card_acceptance
+    - card_arrival
+    - card_delivery_estimate
+    - card_linking
+    - card_not_working
+    - card_swallowed
+    - change_pin
+    - contactless_not_working
+    - damaged_card
+    - disposable_card_limits
+    - expiration_date
+    - get_disposable_virtual_card
+    - get_physical_card
+    - getting_spare_card
+    - getting_virtual_card
+    - new_card
+    - order_physical_card
+    - pin_blocked
+    - virtual_card_not_working
+    - visa_or_mastercard
+
+  account_access:
+    - account_blocked
+    - age_limit
+    - edit_personal_details
+    - freeze_account
+    - passcode_forgotten
+    - terminate_account
+    - unable_to_verify_identity
+    - verify_my_identity
+    - verify_source_of_funds
+    - why_verify_identity
+
+  loans_credit:
+    - application_status
+    - apr
+    - credit_limit
+    - credit_limit_change
+    - credit_score
+    - improve_credit_score
+    - interest_rate
+    - min_payment
+    - redeem_rewards
+    - rewards_balance
+
+  general_banking:
+    - country_support
+    - exchange_rate
+    - exchange_via_app
+    - fiat_currency_support
+    - insurance
+    - insurance_change
+    - order_checks
+    - routing
+    - supported_cards_and_currencies
+    - taxes
+    - travel_notification
+
+  # CLINC150 "small_talk" and "meta" domains
+  small_talk:
+    - are_you_a_bot
+    - cancel
+    - change_accent
+    - change_ai_name
+    - change_language
+    - change_speed
+    - change_user_name
+    - change_volume
+    - do_you_have_pets
+    - fun_fact
+    - goodbye
+    - greeting
+    - how_old_are_you
+    - maybe
+    - meaning_of_life
+    - "no"
+    - repeat
+    - reset_settings
+    - sync_device
+    - tell_joke
+    - thank_you
+    - user_name
+    - what_are_your_hobbies
+    - what_can_i_ask_you
+    - what_is_your_name
+    - whisper_mode
+    - where_are_you_from
+    - who_do_you_work_for
+    - who_made_you
+    - "yes"
+
+  # oos plus off-domain CLINC150 intents (travel, kitchen, auto, work, home, utility)
+  out_of_scope:
+    - oos
+    - accept_reservations
+    - alarm
+    - book_flight
+    - book_hotel
+    - calculator
+    - calendar
+    - calendar_update
+    - calories
+    - cancel_reservation
+    - car_rental
+    - carry_on
+    - confirm_reservation
+    - cook_time
+    - current_location
+    - date
+    - definition
+    - directions
+    - distance
+    - find_phone
+    - flight_status
+    - flip_coin
+    - food_last
+    - gas
+    - gas_type
+    - how_busy
+    - income
+    - ingredient_substitution
+    - ingredients_list
+    - international_visa
+    - jump_start
+    - last_maintenance
+    - lost_luggage
+    - make_call
+    - meal_suggestion
+    - measurement_conversion
+    - meeting_schedule
+    - mpg
+    - next_holiday
+    - next_song
+    - nutrition_info
+    - oil_change_how
+    - oil_change_when
+    - order
+    - payday
+    - play_music
+    - plug_type
+    - pto_balance
+    - pto_request
+    - pto_request_status
+    - pto_used
+    - recipe
+    - reminder
+    - reminder_update
+    - restaurant_reservation
+    - restaurant_reviews
+    - restaurant_suggestion
+    - roll_dice
+    - rollover_401k
+    - schedule_maintenance
+    - schedule_meeting
+    - share_location
+    - shopping_list
+    - shopping_list_update
+    - smart_home
+    - spelling
+    - text
+    - time
+    - timer
+    - timezone
+    - tire_change
+    - tire_pressure
+    - todo_list
+    - todo_list_update
+    - traffic
+    - translate
+    - travel_alert
+    - travel_suggestion
+    - uber
+    - update_playlist
+    - vaccines
+    - w2
+    - weather
+    - what_song

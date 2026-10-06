@@ -1,0 +1,17 @@
+{
+  "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+  "base_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "architecture": "IntentClassifier",
+  "pooling": "mean",
+  "num_labels": 213,
+  "hidden_size": 384,
+  "dropout_rate": 0.1,
+  "max_length": 64,
+  "text_cleaning": "clean_text_v1",
+  "state_dict_prefixes": [
+    "encoder.",
+    "classifier."
+  ],
+  "version_name": "repro-v1",
+  "weights_sha256": "e9940a3bdff273189e449bc572f51c3e3c86a6aa42c7bf35edf4cf668d6a39b2"
+}

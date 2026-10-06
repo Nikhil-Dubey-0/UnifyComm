@@ -1,0 +1,7 @@
+{
+  "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+  "num_labels": 77,
+  "hidden_size": 384,
+  "dropout_rate": 0.1,
+  "max_length": 64
+}

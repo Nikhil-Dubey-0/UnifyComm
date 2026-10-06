@@ -1,0 +1,122 @@
+[
+  {
+    "text": "I can't access my account anymore",
+    "expected": "account_blocked",
+    "original_confidence": 0.5358,
+    "top3": [
+      [
+        "account_blocked",
+        0.7272
+      ],
+      [
+        "freeze_account",
+        0.0915
+      ],
+      [
+        "terminate_account",
+        0.0508
+      ]
+    ],
+    "match": true
+  },
+  {
+    "text": "What's the exchange rate for USD to EUR?",
+    "expected": "exchange_rate",
+    "original_confidence": 0.9976,
+    "top3": [
+      [
+        "exchange_rate",
+        0.9814
+      ],
+      [
+        "interest_rate",
+        0.0047
+      ],
+      [
+        "exchange_charge",
+        0.001
+      ]
+    ],
+    "match": true
+  },
+  {
+    "text": "My card was stolen yesterday",
+    "expected": "lost_or_stolen_card",
+    "original_confidence": 0.97,
+    "top3": [
+      [
+        "lost_or_stolen_card",
+        0.9407
+      ],
+      [
+        "compromised_card",
+        0.011
+      ],
+      [
+        "damaged_card",
+        0.0092
+      ]
+    ],
+    "match": true
+  },
+  {
+    "text": "Can you help me book a flight to London?",
+    "expected": "book_flight",
+    "original_confidence": 0.9646,
+    "top3": [
+      [
+        "book_flight",
+        0.7055
+      ],
+      [
+        "flight_status",
+        0.0711
+      ],
+      [
+        "directions",
+        0.0285
+      ]
+    ],
+    "match": true
+  },
+  {
+    "text": "I was charged twice for the same transaction",
+    "expected": "transaction_charged_twice",
+    "original_confidence": 0.9999,
+    "top3": [
+      [
+        "transaction_charged_twice",
+        0.9962
+      ],
+      [
+        "extra_charge_on_statement",
+        0.0003
+      ],
+      [
+        "meeting_schedule",
+        0.0002
+      ]
+    ],
+    "match": true
+  },
+  {
+    "text": "What's the weather like today?",
+    "expected": "weather",
+    "original_confidence": 0.991,
+    "top3": [
+      [
+        "weather",
+        0.9135
+      ],
+      [
+        "time",
+        0.0068
+      ],
+      [
+        "gas",
+        0.0062
+      ]
+    ],
+    "match": true
+  }
+]

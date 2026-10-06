@@ -1,0 +1,12 @@
+{
+  "accuracy": 0.8561688311688311,
+  "macro_f1": 0.8491326687653813,
+  "weighted_f1": 0.8491326687653816,
+  "inference_avg_ms": 18.636615190025623,
+  "inference_p95_ms": 34.007392250191515,
+  "num_classes": 77,
+  "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+  "dataset": "banking77",
+  "epochs_trained": 5,
+  "best_epoch": 5
+}
