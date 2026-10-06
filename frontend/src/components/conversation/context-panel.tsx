@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ConversationDetail, ConversationStatus, Message } from "@/lib/api/client";
+import type { AiResult, ConversationDetail, ConversationStatus, Message } from "@/lib/api/client";
 import { formatDateTime, humanize, percent } from "@/lib/format";
 import { useAgents, usePatchConversation } from "@/lib/queries";
 
@@ -210,7 +210,28 @@ function LatestAnalysis({ message }: { message: Message | undefined }) {
           ))}
         </ul>
       )}
+      <ModelInfo results={[intent, message.ai.sentiment]} />
     </div>
+  );
+}
+
+function ModelInfo({ results }: { results: (AiResult | null | undefined)[] }) {
+  const present = results.filter((r): r is AiResult => !!r);
+  if (present.length === 0) return null;
+  return (
+    <ul className="space-y-0.5 border-t pt-2 text-[10px] text-muted-foreground" data-testid="model-info">
+      {present.map((r) => (
+        <li key={r.task} className="tabular flex justify-between gap-2">
+          <span className="truncate" title={r.model_name}>
+            {r.model_name}
+          </span>
+          <span className="shrink-0">
+            {r.model_version}
+            {r.latency_ms != null && ` · ${r.latency_ms} ms`}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

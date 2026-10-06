@@ -108,7 +108,7 @@ Each decision is fixed for the project. Reopening one requires a written reason 
 Rules:
 - Run exactly one uvicorn worker process. The WebSocket hub is in memory.
 - Anything that loads a local model runs in the worker. HTTPS calls to OpenAI may run in either process, always with a timeout.
-- The worker handles every job kind. It loads models lazily on the first AI job and keeps them for the process lifetime.
+- The worker handles every job kind. In `real` mode it starts loading both models in a background thread at startup (importing torch and transformers alone takes 7 s or more on the dev laptop), and keeps them for the process lifetime. Jobs that arrive during the load wait for it. A model that fails to load is retried at most once a minute; jobs in between record `status='error'` for that task (§14).
 
 ---
 
@@ -558,7 +558,7 @@ The teammate's `models/sentiment/model_cache/config.json` is identical to the pu
 - Report correction: this model was trained on about 124M tweets (2018–2021). The "58 million tweets" figure describes the older `twitter-roberta-base-sentiment`.
 
 ### 8.4 Runtime settings
-CPU torch in the app environment. `torch.set_num_threads(TORCH_NUM_THREADS)` (default 4). Batch size up to 16. Load once, then a warm-up call. Expected worker memory: about 0.7–1.0 GB in real mode. Quantization or model substitution is not allowed without the user's explicit approval.
+CPU torch in the app environment. `torch.set_num_threads(TORCH_NUM_THREADS)` (default 4). Batch size up to 16. Load once (preloaded at worker start, §3), verify the weights' sha256 (intent: `model_meta.json`; sentiment: `models/sentiment/hf/manifest.json`), then a warm-up call. Sentiment is pinned to commit `3216a57f2a0d9c45a2e6c20157c20c49fb4bf9c7` and loaded from `pytorch_model.bin` (the repo has no safetensors on `main`; Transformers 5 reads it with `torch.load(weights_only=True)`). Expected worker memory: about 0.7–1.0 GB in real mode. Quantization or model substitution is not allowed without the user's explicit approval.
 
 ### 8.5 Golden tests (from the team's notebook output in the slides)
 `tests/models/` is marked `@pytest.mark.models` and skipped when weights are absent.
@@ -577,6 +577,8 @@ CPU torch in the app environment. `torch.set_num_threads(TORCH_NUM_THREADS)` (de
 | This is the worst bank I have ever used | negative | 0.9488 |
 
 Plan A or sentiment: label must match and confidence must be within ±0.02. Plan B intent: label must match.
+
+**Result (Session 3, CPU, `uv run pytest -m models`):** intent 6/6 labels, with confidences and top-3 identical to the repro-v1 export run (`golden_results.json`, checked within ±0.02); sentiment 4/4 labels with confidences identical to the team notebook to four decimals. The golden tests also check batch-vs-single consistency and that `model_version` equals the weights' hash.
 
 ### 8.6 LLM (OpenAI)
 - SDK: `openai` Python, `AsyncOpenAI`, **Responses API** with `client.responses.parse(..., text_format=PydanticModel)`, `store=False`, `timeout=OPENAI_TIMEOUT_SECONDS` (20), `max_retries=1`.
@@ -767,6 +769,8 @@ The frontend uses `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localho
 
 Performance targets (dev laptop): ingest p95 < 150 ms; AI labels visible < 2 s after a simulator message; draft < 10 s.
 
+Measured in Session 3 (real models, api + worker + `next dev` running, `scripts/check_real_models.py`): labels visible 0.70–0.78 s after a simulator message (median 0.73 s, including the worker's 500 ms idle poll); model latency intent median 50 ms, sentiment median 113 ms; worker working set 683 MB. Worker startup in real mode takes 30–40 s before the first labels (mostly `import transformers` under load); it happens in the background (§3).
+
 Memory budget (7.3 GB RAM): PostgreSQL ~0.2 GB, api ~0.2 GB, worker ~1 GB (real mode), Next dev ~1 GB, browser and editor the rest. Never run model training at the same time as the app. Use `next build && next start` for the demo.
 
 Security: `.env` is never committed. Twilio signatures are validated. CORS is limited to the frontend origin. PII is redacted before LLM calls. OpenAI requests use `store=False`. Secrets and message bodies are not logged above DEBUG. Passwords use Argon2.
@@ -823,14 +827,14 @@ Metrics for the report (Session 5, `/metrics/summary`): first-response time, dra
 - **Exit:** smoke test passes; `npm run build` and `tsc --noEmit` clean; backend tests still green.
 
 ### Session 3: Real models
-- [ ] Decide Plan A or Plan B (§8.2) from the files present at session start.
-- [ ] `scripts/download_models.py` (sentiment, pinned revision, sha256). `LocalSentimentClassifier` with cardiffnlp preprocessing.
-- [ ] Plan A: `LocalIntentClassifier` mirroring the notebook. Plan B: `ml/` CUDA env, `train.py`, `evaluate.py`, saved artefacts, metrics report.
-- [ ] Worker real mode: lazy load, warm-up, batching, `inference_mode`, thread count, per-task error isolation, `model_version` from the weights' hash.
-- [ ] `text_prep`: email cleanup, truncation, sentiment preprocessing.
-- [ ] Golden tests (§8.5).
-- [ ] UI: top-3 intents with confidences, Needs review, Intent unavailable, model version tooltip, category queues.
-- [ ] Measure per-message latency and worker memory; record them in `CLAUDE.md`.
+- [x] Decide Plan A or Plan B (§8.2) from the files present at session start. (Plan B; done before Session 3, see §8.2.)
+- [x] `scripts/download_models.py` (sentiment, pinned revision, sha256). `LocalSentimentClassifier` with cardiffnlp preprocessing.
+- [x] Plan A: `LocalIntentClassifier` mirroring the notebook. Plan B: `ml/` CUDA env, `train.py`, `evaluate.py`, saved artefacts, metrics report.
+- [x] Worker real mode: lazy load, warm-up, batching, `inference_mode`, thread count, per-task error isolation, `model_version` from the weights' hash.
+- [x] `text_prep`: email cleanup, truncation, sentiment preprocessing.
+- [x] Golden tests (§8.5).
+- [x] UI: top-3 intents with confidences, Needs review, Intent unavailable, model version tooltip, category queues.
+- [x] Measure per-message latency and worker memory; record them in `CLAUDE.md`.
 - **Exit:** golden tests pass; real labels in the UI < 2 s; stop worker → "Analysis pending" → restart → labels appear; boundary test green.
 
 ### Session 4: OpenAI assistance and compliance (the complete loop)

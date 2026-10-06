@@ -10,11 +10,17 @@ Update this block at the end of every session: tick finished items, note carry-o
 
 - [x] Session 1: backend foundation and walking skeleton (backend half), done 2026-10-06
 - [x] Session 2: frontend workspace, walking skeleton complete, done 2026-10-06
-- [ ] Session 3: real models (intent Plan A or B, sentiment)
+- [x] Session 3: real models (intent Plan A or B, sentiment), done 2026-10-07
 - [ ] Session 4: OpenAI drafts and summaries, compliance, full demo on simulator
 - [ ] Session 5: Gmail + Twilio WhatsApp, metrics, hardening, README
 
 Notes for the next session:
+- **Session 3 result (2026-10-07):** real models live. `.env` now has `AI_MODE=real` (tests still force fake; set it back to `fake` for a lighter worker). Golden tests: intent 6/6 identical to the export run, sentiment 4/4 identical to the notebook. Exit criteria verified on the running stack: real labels 0.70–0.78 s after a simulator message; stop worker → "Analysis pending" in the UI → restart → labels appear without a reload; Playwright smoke passes in real mode; boundary test green. Measured: intent 50 ms, sentiment 113 ms median; worker 683 MB. 175 tests + 17 `-m models` tests green.
+- Sentiment model: `models/sentiment/hf/` (gitignored), commit `3216a57f2a0d…`, `pytorch_model.bin` (no safetensors on `main`; Transformers 5 loads it with `torch.load(weights_only=True)`), sha256 `4d24a3e32a88…` in `manifest.json`. `scripts/download_models.py` downloads over **IPv4** with resume and checks the Hub's sha256: this network drops connections and stalls on IPv6.
+- Worker real mode preloads both models in a background thread at startup (ARCHITECTURE §3 updated); expect 30–40 s before the first labels after a worker restart, mostly `import transformers` while other processes compete for CPU. A model that fails to load is retried at most once a minute.
+- `clean_text` lives in `app/ai/text_prep.py` (torch-free) together with email quote/signature stripping, which applies only to the email channel.
+- Fixed in Session 3 (tests first): `latency_ms` included time spent waiting for a model to load (showed 36 s after a restart); the download retry counted interruptions that had made progress and could keep a truncated file.
+- Stopping a background `npm run dev` leaves `next dev` running (and it can degrade after hours: "Jest worker encountered 2 child process exceptions"). Stop it with `taskkill /PID <next dev pid> /T /F`.
 - **Session 2 result (2026-10-06):** all §16 Session 2 items done. Next.js 16.3.8 + React 19.2, Tailwind 4, shadcn/ui (radix base, Nova preset), TanStack Query 5.104, openapi-fetch 0.17 / openapi-typescript 7.13, Playwright 1.63. Exit criteria verified: Playwright smoke passes (login → simulator message → live inbox → reply delivered → visible in simulator), `npm run build`, `tsc --noEmit` and `npm run lint` clean, backend 153 tests green. WebSocket reconnect was verified by stopping and restarting the api with a page open (indicator closed → open).
 - Session 2 contract changes (in ARCHITECTURE): `GET /api/agents`; §11 client invalidation also covers `["simulator-thread"]` and `["customer"]`, and close code 1008 logs out. Response models with defaults set `json_schema_serialization_defaults_required=True` so generated TS types are not optional.
 - Fixed in Session 2 (test first): the fake classifiers ranked runner-ups above the top label in `top_k`.
@@ -87,7 +93,9 @@ cd frontend; npm run gen:api; npx tsc --noEmit; npm run lint; npm run build
 cd frontend; npx playwright test               # uses Microsoft Edge; starts or reuses api, worker, web
 
 # Models
-cd backend; uv run python -m scripts.download_models   # sentiment, pinned revision
+cd backend; uv run python -m scripts.download_models   # sentiment, pinned revision, IPv4, resumable, sha256-checked
+cd backend; uv run pytest -m models                    # golden tests + real-mode worker test
+cd backend; uv run python -m scripts.check_real_models # needs api + worker with AI_MODE=real
 ```
 
 Keep this section in sync when commands change.

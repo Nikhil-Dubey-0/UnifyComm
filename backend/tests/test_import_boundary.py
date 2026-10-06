@@ -38,6 +38,7 @@ def test_api_never_imports_torch(backend_dir):
     [
         "app.worker.loop",
         "app.worker.handlers",
+        "app.worker.classifiers",
         "app.ai.fake",
         "app.ai.contracts",
         "app.ai.text_prep",

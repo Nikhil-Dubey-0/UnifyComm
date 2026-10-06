@@ -1,5 +1,6 @@
 """Worker jobs: analysis + routing (§6.2), queue retries and leases (§5.3, §12)."""
 
+import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text, update
@@ -235,3 +236,21 @@ async def test_heartbeat_upserts(db, worker):
     rows = list(await db.scalars(select(SystemStatus)))
     assert [r.key for r in rows] == [system.HEARTBEAT_KEY]
     assert rows[0].value["worker_id"] == "test-worker"
+
+
+async def test_latency_excludes_waiting_for_the_model_to_load(client, db, worker, monkeypatch):
+    """latency_ms is inference time: a job that waited for a slow model load must not
+    report the wait (it was showing ~36 s right after a worker restart)."""
+    real_get = worker.classifiers.get
+
+    def slow_get(task):
+        time.sleep(0.4)  # stands in for the model still loading
+        return real_get(task)
+
+    monkeypatch.setattr(worker.classifiers, "get", slow_get)
+    r = (await post_inbound(client, "sms", "+91 90000 00061", "refund please")).json()
+    await run_all_jobs(worker)
+    latencies = await db.scalars(
+        select(MessageAiResult.latency_ms).where(MessageAiResult.message_id == r["message_id"])
+    )
+    assert all(ms is not None and ms < 200 for ms in latencies)

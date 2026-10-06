@@ -102,6 +102,10 @@ async def _heartbeat_forever(ctx: WorkerContext) -> None:
 async def run_forever(ctx: WorkerContext, stop: asyncio.Event) -> None:
     log.info("worker started", extra={"worker_id": ctx.worker_id, "ai_mode": ctx.settings.ai_mode})
     beat = asyncio.create_task(_heartbeat_forever(ctx), name="heartbeat")
+    if ctx.settings.ai_mode == "real":
+        # Loading takes 10 s or more; start now so the first message is not delayed.
+        # Jobs that arrive meanwhile wait on the provider's lock.
+        preload = asyncio.create_task(asyncio.to_thread(ctx.classifiers.preload), name="preload")
     try:
         while not stop.is_set():
             try:
@@ -117,4 +121,6 @@ async def run_forever(ctx: WorkerContext, stop: asyncio.Event) -> None:
                     pass
     finally:
         beat.cancel()
+        if ctx.settings.ai_mode == "real":
+            preload.cancel()
         log.info("worker stopped", extra={"worker_id": ctx.worker_id})

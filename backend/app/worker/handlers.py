@@ -39,10 +39,11 @@ FailureHook = Callable[[AsyncSession, dict[str, Any], str], Awaitable[None]]
 
 async def _classify(ctx: WorkerContext, task: AiTask, text: str) -> TaskOutcome:
     """Run one classifier off the event loop. Failures become an error outcome so one
-    task never blocks the other (§6.2 step 3)."""
-    started = time.perf_counter()
+    task never blocks the other (§6.2 step 3). latency_ms is inference time only; waiting
+    for a model that is still loading is not counted."""
     try:
         classifier = await asyncio.to_thread(ctx.classifiers.get, task)
+        started = time.perf_counter()
         [prediction] = await asyncio.to_thread(classifier.predict, [text])
     except Exception as exc:
         name, version = ctx.classifiers.describe(task)
@@ -58,8 +59,12 @@ async def analyze_message(
     message = await session.get(Message, payload["message_id"])
     if message is None or message.direction != Direction.inbound:
         return
-    intent = await _classify(ctx, AiTask.intent, text_prep.for_intent(message.body))
-    sentiment = await _classify(ctx, AiTask.sentiment, text_prep.for_sentiment(message.body))
+    intent = await _classify(
+        ctx, AiTask.intent, text_prep.for_intent(message.body, message.channel)
+    )
+    sentiment = await _classify(
+        ctx, AiTask.sentiment, text_prep.for_sentiment(message.body, message.channel)
+    )
     await analysis.store_analysis(
         session,
         message,

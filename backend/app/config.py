@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     intent_model_dir: Path = Path("./models/intent/repro-v1")
     intent_confidence_floor: float = 0.50
     sentiment_model_id: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
-    sentiment_model_revision: str = ""
+    sentiment_model_revision: str = "3216a57f2a0d9c45a2e6c20157c20c49fb4bf9c7"
     torch_num_threads: int = 4
 
     openai_api_key: SecretStr = SecretStr("")
@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     def resolve_path(self, path: Path) -> Path:
         """Paths in .env are relative to the repo root, not the working directory."""
         return path if path.is_absolute() else (REPO_ROOT / path).resolve()
+
+    @property
+    def sentiment_model_dir(self) -> Path:
+        """Where scripts/download_models.py puts the pinned sentiment model."""
+        return self.resolve_path(self.models_dir) / "sentiment" / "hf"
 
     def default_provider(self, channel: Channel) -> Provider:
         return {
