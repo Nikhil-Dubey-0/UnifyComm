@@ -54,6 +54,10 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> Agen
     return agent
 
 
+async def list_active_agents(session: AsyncSession) -> list[Agent]:
+    return list(await session.scalars(select(Agent).where(Agent.is_active).order_by(Agent.name)))
+
+
 async def agent_from_token(session: AsyncSession, token: str, settings: Settings) -> Agent:
     agent = await session.get(Agent, decode_token(token, settings))
     if agent is None or not agent.is_active:

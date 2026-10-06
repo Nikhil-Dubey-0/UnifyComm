@@ -61,3 +61,13 @@ def test_fake_negative_is_strong_enough_to_raise_priority():
 def test_text_prep():
     assert for_intent("  hello \n\n  there  ") == "hello there"
     assert for_sentiment("@rahul see https://x.io/a now") == "@user see http now"
+
+
+@pytest.mark.parametrize("text", ["Any update?", "My card was stolen", "hello"])
+def test_fake_top_k_is_ranked_highest_first(text):
+    for classifier in (FakeIntentClassifier(), FakeSentimentClassifier()):
+        p = classifier.predict([text])[0]
+        scores = [s.confidence for s in p.top_k]
+        assert scores == sorted(scores, reverse=True), (classifier.name, scores)
+        assert p.top_k[0].confidence == p.confidence
+        assert sum(scores) <= 1.0 + 1e-9

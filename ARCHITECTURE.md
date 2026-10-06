@@ -156,12 +156,16 @@ UnifyComm/
 │   │                                # check_walking_skeleton.py (Session 1 exit check)
 │   └── tests/                       # unit/, integration/, models/ (golden), test_import_boundary.py
 ├── frontend/
-│   ├── package.json
+│   ├── package.json  openapi.json (exported)  playwright.config.ts (Edge channel)
 │   └── src/
-│       ├── app/                     # (auth)/login, (workspace)/inbox, customers/[id], simulator,
+│       ├── app/                     # (auth)/login, (workspace)/inbox/[conversationId],
+│       │                            # customers/[customerId], simulator,
 │       │                            # admin/preferences, admin/compliance, metrics
-│       ├── components/
+│       ├── components/              # ui/ (shadcn), inbox/, conversation/, customers/
+│       ├── hooks/
 │       ├── lib/api/                 # schema.d.ts (generated), client.ts (openapi-fetch)
+│       ├── lib/auth.ts              # session store (memory + sessionStorage)
+│       ├── lib/queries.ts           # TanStack Query hooks and query keys
 │       ├── lib/ws.ts                # socket + query invalidation
 │       └── e2e/                     # Playwright: smoke.spec.ts, demo.spec.ts
 └── ml/                              # only used if the intent model must be retrained (§8.2, Plan B)
@@ -634,6 +638,7 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 |---|---|---|---|
 | POST | `/auth/login` | `{email, password}` | `{access_token, token_type, agent}` |
 | GET | `/auth/me` | | `Agent` |
+| GET | `/agents` | | active agents `[Agent]` (assignee picker and names) |
 | GET | `/health` | | `{db, worker_heartbeat_at, ai_mode, llm_configured, channels}` |
 | POST | `/channels/simulator/inbound` | `{channel, from, sender_name?, body, subject?, external_id?}` (a missing `external_id` gets a generated one) | `201 {message_id, conversation_id, customer_id, duplicate}`; a duplicate `external_id` returns `200` with `duplicate: true` and the original IDs |
 | GET | `/simulator/contacts` | | seeded customers with contacts per channel |
@@ -681,7 +686,7 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | `message.status_changed` | outbound delivery status changes |
 | `summary.updated` | new summary row |
 
-Client behaviour: any event invalidates `["conversations"]` and `["conversation", conversation_id]`. On reconnect, it invalidates everything. The client never applies event payloads as state.
+Client behaviour: any event invalidates `["conversations"]` and `["conversation", conversation_id]`; `message.*` events also invalidate `["simulator-thread"]`, and `conversation.*` events invalidate `["customer"]`. On reconnect, and on `resync`, it invalidates everything. Close code 1008 means the token is invalid: the client logs out instead of reconnecting. The client never applies event payloads as state.
 
 Server: the API lifespan starts `EventBridge`, which holds a dedicated `asyncpg` connection, runs `add_listener('uc_events', ...)` and fans out to the in-memory hub. If the connection drops, it reconnects with backoff (1 s → 30 s) and broadcasts `{"type": "resync"}` so clients refetch.
 
@@ -807,14 +812,14 @@ Metrics for the report (Session 5, `/metrics/summary`): first-response time, dra
 - **Exit:** `uv run pytest` green; `uv run ruff check` clean. A scripted check proves that a simulator POST appears with fake intent and sentiment within 2 s while the worker runs, a WS client receives `message.created` and `message.analyzed`, a duplicate external ID is ignored, and the API never imports torch.
 
 ### Session 2: Frontend workspace (walking skeleton complete)
-- [ ] Next.js 16 (App Router, TypeScript, `src/`), Tailwind, shadcn/ui, TanStack Query v5, `openapi-typescript` + `openapi-fetch`, `npm run gen:api`.
-- [ ] Login, token handling (memory + `sessionStorage`), guarded workspace layout.
-- [ ] Inbox: list with filters (status, category, priority, assignee) and badges. Thread view: channel icons, direction, delivery status, AI chips. Composer: channel defaults to the last inbound channel, `Idempotency-Key` per send. Context panel: customer card, AI analysis, summary placeholder.
-- [ ] `lib/ws.ts`: connect, reconnect with backoff, invalidate on events, connection indicator.
-- [ ] Simulator page (customer's side): choose seeded contact and channel, chat thread, send, see replies.
-- [ ] Customer page, with "Link to existing customer" for unverified customers.
-- [ ] Design pass with the `frontend-design` skill.
-- [ ] Playwright smoke: login → simulator message → appears in inbox without reload → agent reply → appears in simulator.
+- [x] Next.js 16 (App Router, TypeScript, `src/`), Tailwind, shadcn/ui, TanStack Query v5, `openapi-typescript` + `openapi-fetch`, `npm run gen:api`.
+- [x] Login, token handling (memory + `sessionStorage`), guarded workspace layout.
+- [x] Inbox: list with filters (status, category, priority, assignee) and badges. Thread view: channel icons, direction, delivery status, AI chips. Composer: channel defaults to the last inbound channel, `Idempotency-Key` per send. Context panel: customer card, AI analysis, summary placeholder.
+- [x] `lib/ws.ts`: connect, reconnect with backoff, invalidate on events, connection indicator.
+- [x] Simulator page (customer's side): choose seeded contact and channel, chat thread, send, see replies.
+- [x] Customer page, with "Link to existing customer" for unverified customers.
+- [x] Design pass (done by hand with screenshot review; the `frontend-design` skill was not installed).
+- [x] Playwright smoke: login → simulator message → appears in inbox without reload → agent reply → appears in simulator.
 - **Exit:** smoke test passes; `npm run build` and `tsc --noEmit` clean; backend tests still green.
 
 ### Session 3: Real models

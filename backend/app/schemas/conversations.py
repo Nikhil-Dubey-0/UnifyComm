@@ -70,6 +70,8 @@ class ConversationListItem(ConversationOut):
 
 
 class AiResultOut(BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     task: AiTask
     status: AiStatus
     label: str | None
@@ -88,6 +90,8 @@ class AiResultOut(BaseModel):
 
 class MessageAi(BaseModel):
     """`null` for a task means analysis is still pending."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     intent: AiResultOut | None = None
     sentiment: AiResultOut | None = None
@@ -125,6 +129,10 @@ class MessageOut(BaseModel):
 
 
 class MessageWithAnalysis(MessageOut):
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_serialization_defaults_required=True
+    )
+
     ai: MessageAi = Field(default_factory=MessageAi)
     compliance_checks: list[ComplianceCheckOut] = Field(default_factory=list)
 

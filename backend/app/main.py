@@ -78,6 +78,7 @@ def create_app(settings: Settings | None = None, *, null_pool: bool = False) -> 
     _install_error_handlers(app)
     for module in (auth, system, simulator, conversations, messages, customers):
         app.include_router(module.router, prefix="/api")
+    app.include_router(auth.agents_router, prefix="/api")
     app.include_router(ws.router)
     return app
 

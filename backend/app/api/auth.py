@@ -19,3 +19,11 @@ async def login(body: LoginRequest, session: SessionDep, settings: SettingsDep) 
 @router.get("/me")
 async def me(agent: CurrentAgent) -> AgentOut:
     return AgentOut.model_validate(agent)
+
+
+agents_router = APIRouter(prefix="/agents", tags=["auth"], responses=ERROR_RESPONSES)
+
+
+@agents_router.get("")
+async def list_agents(session: SessionDep, _: CurrentAgent) -> list[AgentOut]:
+    return [AgentOut.model_validate(a) for a in await auth.list_active_agents(session)]

@@ -9,12 +9,18 @@ UnifyComm is an AI-assisted omnichannel customer-support platform (FastAPI + Pos
 Update this block at the end of every session: tick finished items, note carry-over, record anything the next session must know.
 
 - [x] Session 1: backend foundation and walking skeleton (backend half), done 2026-10-06
-- [ ] Session 2: frontend workspace, walking skeleton complete
+- [x] Session 2: frontend workspace, walking skeleton complete, done 2026-10-06
 - [ ] Session 3: real models (intent Plan A or B, sentiment)
 - [ ] Session 4: OpenAI drafts and summaries, compliance, full demo on simulator
 - [ ] Session 5: Gmail + Twilio WhatsApp, metrics, hardening, README
 
 Notes for the next session:
+- **Session 2 result (2026-10-06):** all §16 Session 2 items done. Next.js 16.3.8 + React 19.2, Tailwind 4, shadcn/ui (radix base, Nova preset), TanStack Query 5.104, openapi-fetch 0.17 / openapi-typescript 7.13, Playwright 1.63. Exit criteria verified: Playwright smoke passes (login → simulator message → live inbox → reply delivered → visible in simulator), `npm run build`, `tsc --noEmit` and `npm run lint` clean, backend 153 tests green. WebSocket reconnect was verified by stopping and restarting the api with a page open (indicator closed → open).
+- Session 2 contract changes (in ARCHITECTURE): `GET /api/agents`; §11 client invalidation also covers `["simulator-thread"]` and `["customer"]`, and close code 1008 logs out. Response models with defaults set `json_schema_serialization_defaults_required=True` so generated TS types are not optional.
+- Fixed in Session 2 (test first): the fake classifiers ranked runner-ups above the top label in `top_k`.
+- Frontend notes: Playwright uses the installed **Microsoft Edge** (`channel: "msedge"`, override with `PW_CHANNEL`), so no browser download is needed; `playwright.config.ts` reuses running api/worker/web or starts them. Next 16 specifics: read `frontend/node_modules/next/dist/docs/` before using an API (`params` are Promises in server components; client pages use `useParams`; `useSearchParams` needs `<Suspense>`). React 19's lint rule forbids `setState` inside effects: derive state instead. The queue list for filters (`lib/format.ts` `CATEGORY_QUEUES`) mirrors §7.3. The dev indicator sits bottom-right and toasts top-centre so neither covers the nav rail.
+- The `frontend-design` skill (SKILLS B2) is not installed here; the design pass was done by hand with screenshot review. Install it before Session 4's UI work if a deeper pass is wanted.
+- Dev DB now contains smoke-test senders ("Smoke <timestamp>"); `uv run python -m scripts.seed --reset` before a demo.
 - **Session 1 result (2026-10-06):** all §16 Session 1 items done. 149 backend tests green (unit, integration on `unifycomm_test`, import boundary with a positive control); ruff clean; `alembic check` clean. `scripts/check_walking_skeleton.py` passed against live api + worker: fake labels visible 0.48 s after a simulator POST, WS received `message.created` + `message.analyzed`, duplicate external ID returned 200 `duplicate: true`, agent reply delivered to the simulator thread, api imports no torch. Dev DB is migrated and seeded (customers 1 Rahul, 2 Priya, 3 Amit; agents `agent@`/`admin@unifycomm.local`).
 - Contract changes made in Session 1 (already in ARCHITECTURE): simulator inbound takes optional `external_id`; `SendResult.delivered`; `messages.metadata` holds `from` (inbound) / `to` (outbound) normalized addresses; D11 text aligned to floor 0.50; `LOG_LEVEL` setting; WS bad token closes with 1008.
 - New dependency `tzdata` (user-approved): Windows Python has no timezone database, needed for `ZoneInfo("Asia/Kolkata")`.
@@ -77,8 +83,8 @@ cd backend; uv run ruff check .; uv run ruff format --check .
 cd backend; uv run alembic check                # ORM and migrations agree
 cd backend; uv run python -m scripts.check_walking_skeleton   # needs api + worker running
 cd backend; uv run python -m scripts.export_openapi
-cd frontend; npm run gen:api; npx tsc --noEmit; npm run build
-cd frontend; npx playwright test
+cd frontend; npm run gen:api; npx tsc --noEmit; npm run lint; npm run build
+cd frontend; npx playwright test               # uses Microsoft Edge; starts or reuses api, worker, web
 
 # Models
 cd backend; uv run python -m scripts.download_models   # sentiment, pinned revision

@@ -63,6 +63,18 @@ async def test_protected_routes_need_a_valid_token(client, agent, settings):
     assert bad.status_code == 401
 
 
+async def test_agents_lists_active_agents(client, db, auth_headers):
+    admin = await db.scalar(select(Agent).where(Agent.role == "admin"))
+    r = await client.get("/api/agents", headers=auth_headers)
+    assert [a["name"] for a in r.json()] == ["Demo Admin", "Demo Agent"]
+    admin.is_active = False
+    await db.commit()
+    r = await client.get("/api/agents", headers=auth_headers)
+    assert [a["name"] for a in r.json()] == ["Demo Agent"]
+    assert "password_hash" not in r.json()[0]
+    assert (await client.get("/api/agents")).status_code == 401
+
+
 async def test_unknown_route_uses_error_envelope(client):
     r = await client.get("/api/nope")
     assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"

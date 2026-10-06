@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ErrorDetail(BaseModel):
@@ -11,6 +11,8 @@ class ErrorResponse(BaseModel):
 
 
 class Page[T](BaseModel):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     items: list[T]
     next_cursor: str | None = None
 

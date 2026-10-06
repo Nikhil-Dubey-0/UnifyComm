@@ -1444,6 +1444,86 @@
           }
         }
       }
+    },
+    "/api/agents": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Agents",
+        "operationId": "list_agents_api_agents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Agents Api Agents Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1618,7 +1698,10 @@
           "model_version",
           "error",
           "latency_ms",
-          "created_at"
+          "created_at",
+          "category",
+          "category_queue",
+          "needs_review"
         ],
         "title": "AiResultOut"
       },
@@ -2537,6 +2620,10 @@
           }
         },
         "type": "object",
+        "required": [
+          "intent",
+          "sentiment"
+        ],
         "title": "MessageAi",
         "description": "`null` for a task means analysis is still pending."
       },
@@ -2860,7 +2947,9 @@
           "draft_id",
           "provider_timestamp",
           "metadata",
-          "created_at"
+          "created_at",
+          "ai",
+          "compliance_checks"
         ],
         "title": "MessageWithAnalysis"
       },
@@ -2887,7 +2976,8 @@
         },
         "type": "object",
         "required": [
-          "items"
+          "items",
+          "next_cursor"
         ],
         "title": "Page[ConversationListItem]"
       },
@@ -2914,7 +3004,8 @@
         },
         "type": "object",
         "required": [
-          "items"
+          "items",
+          "next_cursor"
         ],
         "title": "Page[CustomerWithContacts]"
       },

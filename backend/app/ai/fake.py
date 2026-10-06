@@ -45,12 +45,15 @@ POSITIVE_WORDS = r"\b(thanks|thank you|great|love|awesome|happy|resolved|perfect
 
 
 def _top_k(label: str, confidence: float, fillers: list[str]) -> list[LabelScore]:
+    """Runner-ups share the remaining probability but always rank below `label`."""
     others = [f for f in fillers if f != label][:2]
     rest = 1.0 - confidence
+    second = round(min(rest * 0.6, confidence * 0.8), 4)
+    third = round(min(rest - second, second * 0.75), 4)
     return [
         LabelScore(label=label, confidence=confidence),
-        LabelScore(label=others[0], confidence=round(rest * 0.6, 4)),
-        LabelScore(label=others[1], confidence=round(rest * 0.4, 4)),
+        LabelScore(label=others[0], confidence=second),
+        LabelScore(label=others[1], confidence=third),
     ]
 
 
