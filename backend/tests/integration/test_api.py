@@ -300,7 +300,18 @@ async def test_simulator_thread_is_per_channel_and_address(client, auth_headers)
 
 
 async def test_compliance_rules_endpoint(client, auth_headers):
-    assert (await client.get("/api/compliance/rules", headers=auth_headers)).json() == []
+    rules = (await client.get("/api/compliance/rules", headers=auth_headers)).json()
+    assert [r["rule_id"] for r in rules] == [
+        "consent.opt_out",
+        "consent.proactive_requires_opt_in",
+        "dnd.proactive",
+        "time.promo_window",
+        "whatsapp.session_window",
+        "content.sensitive_data",
+        "content.prohibited_claims",
+        "content.length",
+    ]
+    assert all(r["description"] for r in rules)
 
 
 async def test_health_without_auth(client):

@@ -12,6 +12,8 @@ from app.enums import (
     ConversationStatus,
     DeliveryStatus,
     Direction,
+    DraftOutcome,
+    JobStatus,
     Priority,
     Provider,
     Purpose,
@@ -161,11 +163,18 @@ class CustomerWithContactsRef(CustomerRef):
     contacts: list[ContactRef]
 
 
+class SummaryJobOut(BaseModel):
+    job_id: int
+    status: JobStatus
+    updated_at: datetime
+
+
 class ConversationDetail(BaseModel):
     conversation: ConversationOut
     customer: CustomerWithContactsRef
     messages: list[MessageWithAnalysis]
     latest_summary: SummaryOut | None
+    summary_job: SummaryJobOut | None
 
 
 class ConversationPatch(BaseModel):
@@ -187,3 +196,21 @@ class ComplianceOut(BaseModel):
 class SendResponse(BaseModel):
     message: MessageOut
     compliance: ComplianceOut
+
+
+class DraftRequestIn(BaseModel):
+    instructions: str | None = Field(default=None, max_length=1_000)
+    channel: Channel | None = None
+
+
+class DraftOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    conversation_id: int
+    based_on_message_id: int
+    body: str
+    verify_hints: list[str]
+    model: str
+    outcome: DraftOutcome
+    created_at: datetime

@@ -8,7 +8,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.intent_map import IntentMap, get_intent_map
+from app.ai.llm import LLMClient
 from app.channels.registry import AdapterRegistry
+from app.compliance.engine import Rule
 from app.config import Settings
 from app.errors import Unauthorized
 from app.models import Agent
@@ -25,6 +27,14 @@ def get_registry(request: Request) -> AdapterRegistry:
     return request.app.state.registry
 
 
+def get_rules(request: Request) -> list[Rule]:
+    return request.app.state.rules
+
+
+def get_llm(request: Request) -> LLMClient:
+    return request.app.state.llm
+
+
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
     """One session per request. Services that own the unit of work commit; anything
     left uncommitted is rolled back when the session closes."""
@@ -35,6 +45,8 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 RegistryDep = Annotated[AdapterRegistry, Depends(get_registry)]
+RulesDep = Annotated[list[Rule], Depends(get_rules)]
+LLMDep = Annotated[LLMClient, Depends(get_llm)]
 IntentMapDep = Annotated[IntentMap, Depends(get_intent_map)]
 
 

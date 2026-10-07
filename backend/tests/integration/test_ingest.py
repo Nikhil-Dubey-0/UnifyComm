@@ -78,7 +78,7 @@ async def test_duplicate_external_id_is_ignored(client, db):
     assert again.status_code == 200
     assert again.json() == {**first.json(), "duplicate": True}
     assert await count(db, Message) == 1
-    assert await count(db, Job) == 1
+    assert await count(db, Job) == 2  # analyze_message + send_acknowledgement
 
 
 async def test_same_external_id_on_another_provider_is_not_a_duplicate(client, db):

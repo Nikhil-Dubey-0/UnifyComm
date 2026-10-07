@@ -1,16 +1,18 @@
 """The only way out for outbound messages (ARCHITECTURE §6.3, CLAUDE.md rule 3).
 
-Every outbound message is inserted as `checking`, passes the compliance engine, and only
-then is queued for the worker's `deliver_message` job.
+Every outbound message (agent reply, proactive outreach, acknowledgement template) is
+inserted as `checking`, passes the compliance engine, and only then is queued for the
+worker's `deliver_message` job. A blocked message is a recorded event, not an error.
 """
 
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +40,7 @@ from app.models import (
     ChannelPreference,
     ComplianceCheck,
     Conversation,
+    Customer,
     CustomerContact,
     Message,
     ReplyDraft,
@@ -68,6 +71,11 @@ class DeliveryError(Exception):
     """A retryable provider failure; the job queue retries with backoff."""
 
 
+def acknowledgement_key(conversation_id: int) -> str:
+    """One acknowledgement per conversation, enforced by the idempotency_key index."""
+    return f"ack-{conversation_id}"
+
+
 async def send_agent_reply(
     session: AsyncSession,
     *,
@@ -81,11 +89,13 @@ async def send_agent_reply(
     rules: Sequence[Rule],
     now: datetime | None = None,
 ) -> SendOutcome:
-    """Agent reply from the conversation composer. Owns the unit of work (commits)."""
+    """Agent reply from the conversation composer (§7.6.1). Owns the unit of work."""
     now = now or datetime.now(UTC)
 
-    replay = await _replay(session, idempotency_key, conversation_id)
+    replay = await _replay(session, idempotency_key)
     if replay is not None:
+        if replay.message.conversation_id != conversation_id:
+            raise _key_reused()
         return replay
 
     conversation = await conversations.get(session, conversation_id, lock=True)
@@ -96,7 +106,142 @@ async def send_agent_reply(
         if conversation.last_inbound_at and conversation.last_inbound_at > now - SERVICE_WINDOW
         else Purpose.proactive
     )
+    outcome = await _submit(
+        session,
+        conversation=conversation,
+        channel=channel,
+        body=body,
+        purpose=purpose,
+        sender_type=SenderType.agent,
+        agent_id=agent.id,
+        idempotency_key=idempotency_key,
+        draft=draft,
+        route=route,
+        settings=settings,
+        rules=rules,
+        now=now,
+    )
+    return outcome or await _replay_after_conflict(session, idempotency_key)
 
+
+async def send_outreach(
+    session: AsyncSession,
+    *,
+    customer_id: int,
+    agent: Agent,
+    channel: Channel,
+    body: str,
+    idempotency_key: str,
+    settings: Settings,
+    rules: Sequence[Rule],
+    now: datetime | None = None,
+) -> SendOutcome:
+    """POST /customers/{id}/outreach: always `proactive` (§7.6.1). Joins the customer's
+    active conversation or starts one in `pending` (waiting on the customer). Owns the
+    unit of work."""
+    now = now or datetime.now(UTC)
+
+    replay = await _replay(session, idempotency_key)
+    if replay is not None:
+        owner = await session.scalar(
+            select(Conversation.customer_id).where(
+                Conversation.id == replay.message.conversation_id
+            )
+        )
+        if owner != customer_id:
+            raise _key_reused()
+        return replay
+
+    if await session.get(Customer, customer_id) is None:
+        raise NotFound(f"Customer {customer_id} not found.")
+    route = await _route(session, customer_id, channel, settings)
+    conversation, created = await conversations.match_or_create(
+        session, customer_id, now=now, reopen_days=settings.conversation_reopen_days
+    )
+    if created:
+        conversation.status = ConversationStatus.pending
+        await events.emit(session, EventType.conversation_created, conversation_id=conversation.id)
+    outcome = await _submit(
+        session,
+        conversation=conversation,
+        channel=channel,
+        body=body,
+        purpose=Purpose.proactive,
+        sender_type=SenderType.agent,
+        agent_id=agent.id,
+        idempotency_key=idempotency_key,
+        draft=None,
+        route=route,
+        settings=settings,
+        rules=rules,
+        now=now,
+    )
+    return outcome or await _replay_after_conflict(session, idempotency_key)
+
+
+async def send_acknowledgement(
+    session: AsyncSession,
+    *,
+    conversation_id: int,
+    body: str,
+    channel: Channel,
+    settings: Settings,
+    rules: Sequence[Rule],
+    now: datetime | None = None,
+    meta: dict[str, Any] | None = None,
+) -> SendOutcome | None:
+    """Worker job `send_acknowledgement`: the fixed template (D13), a `service_reply`
+    from `system`. Idempotent through acknowledgement_key. The caller commits."""
+    now = now or datetime.now(UTC)
+    key = acknowledgement_key(conversation_id)
+    if await _replay(session, key) is not None:
+        return None
+    conversation = await conversations.get(session, conversation_id, lock=True)
+    route = await _route(session, conversation.customer_id, channel, settings)
+    return await _submit(
+        session,
+        conversation=conversation,
+        channel=channel,
+        body=body,
+        purpose=Purpose.service_reply,
+        sender_type=SenderType.system,
+        agent_id=None,
+        idempotency_key=key,
+        draft=None,
+        route=route,
+        settings=settings,
+        rules=rules,
+        now=now,
+        is_template=True,
+        meta=meta,
+        commit=False,
+    )
+
+
+async def _submit(
+    session: AsyncSession,
+    *,
+    conversation: Conversation,
+    channel: Channel,
+    body: str,
+    purpose: Purpose,
+    sender_type: SenderType,
+    agent_id: int | None,
+    idempotency_key: str,
+    draft: ReplyDraft | None,
+    route: Route,
+    settings: Settings,
+    rules: Sequence[Rule],
+    now: datetime,
+    is_template: bool = False,
+    meta: dict[str, Any] | None = None,
+    commit: bool = True,
+) -> SendOutcome | None:
+    """Insert as `checking`, evaluate every rule, store the checks, then block or queue.
+
+    Returns None when a concurrent request with the same idempotency key won the insert
+    (the session is rolled back).
+    """
     message_id = await session.scalar(
         insert(Message)
         .values(
@@ -104,14 +249,15 @@ async def send_agent_reply(
             channel=channel,
             provider=route.provider,
             direction=Direction.outbound,
-            sender_type=SenderType.agent,
-            agent_id=agent.id,
+            sender_type=sender_type,
+            agent_id=agent_id,
             body=body,
+            is_template=is_template,
             purpose=purpose,
             delivery_status=DeliveryStatus.checking,
             idempotency_key=idempotency_key,
             draft_id=draft.id if draft else None,
-            meta={"to": route.to},
+            meta={**(meta or {}), "to": route.to},
         )
         .on_conflict_do_nothing(
             index_elements=["idempotency_key"],
@@ -120,16 +266,20 @@ async def send_agent_reply(
         .returning(Message.id)
     )
     if message_id is None:
-        # A concurrent request with the same key won the insert.
         await session.rollback()
-        replay = await _replay(session, idempotency_key, conversation_id)
-        if replay is None:  # pragma: no cover - the conflicting row must exist
-            raise RuntimeError("idempotency conflict without a stored message")
-        return replay
+        return None
 
     message = await session.get_one(Message, message_id)
     ctx = await _context(
-        session, conversation.customer_id, channel, purpose, body, route, settings, now
+        session,
+        conversation.customer_id,
+        channel,
+        purpose,
+        body,
+        route,
+        settings,
+        now,
+        is_template=is_template,
     )
     decision = engine.evaluate(ctx, rules)
     checks = [
@@ -150,24 +300,19 @@ async def send_agent_reply(
     else:
         message.delivery_status = DeliveryStatus.queued
         await jobs.enqueue(session, JobKind.deliver_message, {"message_id": message.id})
-        if conversation.status == ConversationStatus.open:
-            conversation.status = ConversationStatus.pending
         conversation.last_outbound_at = now
         conversation.last_activity_at = now
-        if conversation.first_response_at is None:
-            conversation.first_response_at = now
-        if draft is not None:
-            draft.outcome = (
-                DraftOutcome.sent_as_is
-                if draft.body.strip() == body.strip()
-                else DraftOutcome.edited
-            )
+        if sender_type == SenderType.agent:
+            _after_agent_message(conversation, now)
+            await _settle_drafts(session, conversation.id, draft, body)
         await events.emit(session, EventType.conversation_updated, conversation_id=conversation.id)
 
     await events.emit(
         session, EventType.message_created, conversation_id=conversation.id, message_id=message.id
     )
-    await session.commit()
+    await session.flush()
+    if commit:
+        await session.commit()
     log.info(
         "outbound message checked",
         extra={
@@ -175,9 +320,67 @@ async def send_agent_reply(
             "conversation_id": conversation.id,
             "allowed": decision.allowed,
             "purpose": str(purpose),
+            "sender_type": str(sender_type),
         },
     )
     return SendOutcome(message=message, allowed=decision.allowed, checks=checks)
+
+
+def _after_agent_message(conversation: Conversation, now: datetime) -> None:
+    """§5.3: an agent message moves an open conversation to pending. First response
+    time is measured only for conversations the customer started."""
+    if conversation.status == ConversationStatus.open:
+        conversation.status = ConversationStatus.pending
+    if conversation.first_response_at is None and conversation.last_inbound_at is not None:
+        conversation.first_response_at = now
+
+
+async def _settle_drafts(
+    session: AsyncSession, conversation_id: int, used: ReplyDraft | None, body: str
+) -> None:
+    """Record the used draft's outcome; other pending drafts were not used (discarded)."""
+    if used is not None:
+        used.outcome = (
+            DraftOutcome.sent_as_is if used.body.strip() == body.strip() else DraftOutcome.edited
+        )
+    stmt = update(ReplyDraft).where(
+        ReplyDraft.conversation_id == conversation_id,
+        ReplyDraft.outcome == DraftOutcome.pending,
+    )
+    if used is not None:
+        stmt = stmt.where(ReplyDraft.id != used.id)
+    await session.execute(stmt.values(outcome=DraftOutcome.discarded))
+
+
+def _key_reused() -> Conflict:
+    return Conflict(
+        "This Idempotency-Key was already used for another message.",
+        code="idempotency_key_reused",
+    )
+
+
+async def _replay(session: AsyncSession, idempotency_key: str) -> SendOutcome | None:
+    message = await session.scalar(
+        select(Message).where(Message.idempotency_key == idempotency_key)
+    )
+    if message is None:
+        return None
+    checks = list(
+        await session.scalars(
+            select(ComplianceCheck)
+            .where(ComplianceCheck.message_id == message.id)
+            .order_by(ComplianceCheck.id)
+        )
+    )
+    allowed = message.delivery_status not in (DeliveryStatus.blocked, DeliveryStatus.checking)
+    return SendOutcome(message=message, allowed=allowed, checks=checks)
+
+
+async def _replay_after_conflict(session: AsyncSession, idempotency_key: str) -> SendOutcome:
+    replay = await _replay(session, idempotency_key)
+    if replay is None:  # pragma: no cover - the conflicting row must exist
+        raise RuntimeError("idempotency conflict without a stored message")
+    return replay
 
 
 async def deliver(session: AsyncSession, message_id: int, registry: AdapterRegistry) -> None:
@@ -248,30 +451,6 @@ async def retry_delivery(session: AsyncSession, message_id: int) -> int:
     )
     await session.commit()
     return job_id
-
-
-async def _replay(
-    session: AsyncSession, idempotency_key: str, conversation_id: int
-) -> SendOutcome | None:
-    message = await session.scalar(
-        select(Message).where(Message.idempotency_key == idempotency_key)
-    )
-    if message is None:
-        return None
-    if message.conversation_id != conversation_id:
-        raise Conflict(
-            "This Idempotency-Key was already used for another conversation.",
-            code="idempotency_key_reused",
-        )
-    checks = list(
-        await session.scalars(
-            select(ComplianceCheck)
-            .where(ComplianceCheck.message_id == message.id)
-            .order_by(ComplianceCheck.id)
-        )
-    )
-    allowed = message.delivery_status not in (DeliveryStatus.blocked, DeliveryStatus.checking)
-    return SendOutcome(message=message, allowed=allowed, checks=checks)
 
 
 async def _draft(

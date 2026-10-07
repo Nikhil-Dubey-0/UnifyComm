@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.enums import JobKind, JobStatus
@@ -43,6 +44,31 @@ async def enqueue(
     session.add(job)
     await session.flush()
     return job.id
+
+
+async def enqueue_summary(session: AsyncSession, conversation_id: int) -> int:
+    """Queue `summarize_conversation` unless one is already pending or running for this
+    conversation (partial unique index uq_jobs_active_summary). Returns the job id."""
+    while True:
+        job_id = await session.scalar(
+            insert(Job)
+            .values(
+                kind=JobKind.summarize_conversation, payload={"conversation_id": conversation_id}
+            )
+            .on_conflict_do_nothing()
+            .returning(Job.id)
+        )
+        if job_id is None:
+            job_id = await session.scalar(
+                select(Job.id).where(
+                    Job.kind == JobKind.summarize_conversation,
+                    Job.payload["conversation_id"].as_integer() == conversation_id,
+                    Job.status.in_([JobStatus.pending, JobStatus.running]),
+                )
+            )
+        # None only if the active job finished between the two statements: insert again.
+        if job_id is not None:
+            return job_id
 
 
 async def claim(session: AsyncSession, worker_id: str) -> Job | None:

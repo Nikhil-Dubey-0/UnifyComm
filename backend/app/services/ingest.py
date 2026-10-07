@@ -73,6 +73,10 @@ async def ingest(
         conversation.status = ConversationStatus.open
 
     await jobs.enqueue(session, JobKind.analyze_message, {"message_id": message_id})
+    if created:
+        await jobs.enqueue(
+            session, JobKind.send_acknowledgement, {"conversation_id": conversation.id}
+        )
 
     await events.emit(
         session, EventType.message_created, conversation_id=conversation.id, message_id=message_id

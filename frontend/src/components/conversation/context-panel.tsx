@@ -1,11 +1,12 @@
 "use client";
 
-import { BadgeCheck, ExternalLink, FileText, Mail, Phone } from "lucide-react";
+import { BadgeCheck, ExternalLink, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
 import { Avatar, PriorityBadge, StatusBadge } from "@/components/badges";
 import { IntentChip, SentimentChip } from "@/components/conversation/ai-chips";
+import { SummaryCard } from "@/components/conversation/summary-card";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -83,6 +84,10 @@ export function ContextPanel({ detail }: { detail: ConversationDetail }) {
             Customer profile <ExternalLink />
           </Link>
         </Button>
+      </Section>
+
+      <Section title="Summary">
+        <SummaryCard detail={detail} />
       </Section>
 
       <Section title="Conversation">
@@ -166,16 +171,6 @@ export function ContextPanel({ detail }: { detail: ConversationDetail }) {
         <LatestAnalysis message={latestInbound} />
       </Section>
 
-      <Section title="Summary">
-        {detail.latest_summary ? (
-          <p className="text-sm leading-relaxed">{detail.latest_summary.body}</p>
-        ) : (
-          <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <FileText className="mt-0.5 size-4 shrink-0" />
-            No summary yet.
-          </p>
-        )}
-      </Section>
     </aside>
   );
 }

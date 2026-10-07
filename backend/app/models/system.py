@@ -20,6 +20,15 @@ class Job(Base):
             "id",
             postgresql_where=text("status = 'pending'"),
         ),
+        # At most one queued summary per conversation (ARCHITECTURE §5.2, §6.5).
+        Index(
+            "uq_jobs_active_summary",
+            text("(payload->>'conversation_id')"),
+            unique=True,
+            postgresql_where=text(
+                "kind = 'summarize_conversation' AND status IN ('pending', 'running')"
+            ),
+        ),
         enum_check("kind", JobKind),
         enum_check("status", JobStatus),
     )

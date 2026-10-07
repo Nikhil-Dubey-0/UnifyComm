@@ -11,6 +11,7 @@ import {
   api,
   call,
   type Channel,
+  type Consent,
   type ConversationStatus,
   type Priority,
 } from "@/lib/api/client";
@@ -26,7 +27,12 @@ export const keys = {
     ["simulator-thread", channel, address] as const,
   simulatorContacts: ["simulator-contacts"] as const,
   agents: ["agents"] as const,
+  complianceChecks: (filters?: ComplianceFilters) =>
+    filters ? (["compliance-checks", filters] as const) : (["compliance-checks"] as const),
+  health: ["health"] as const,
 };
+
+export type ComplianceFilters = { passed?: boolean; rule_id?: string };
 
 export type ConversationFilters = {
   status?: ConversationStatus;
@@ -187,5 +193,98 @@ export function useSimulatorSend() {
     }) => call(api.POST("/api/channels/simulator/inbound", { body: input })),
     onSettled: (_data, _err, input) =>
       qc.invalidateQueries({ queryKey: ["simulator-thread", input.channel] }),
+  });
+}
+
+export function useHealth() {
+  return useQuery({
+    queryKey: keys.health,
+    queryFn: () => call(api.GET("/api/health")),
+    staleTime: 30_000,
+  });
+}
+
+/** POST /drafts. 503 llm_unavailable surfaces as an ApiError the composer shows inline. */
+export function useGenerateDraft(conversationId: number) {
+  return useMutation({
+    mutationFn: (input: { channel: Channel; instructions?: string }) =>
+      call(
+        api.POST("/api/conversations/{conversation_id}/drafts", {
+          params: { path: { conversation_id: conversationId } },
+          body: { channel: input.channel, instructions: input.instructions || null },
+        }),
+      ),
+  });
+}
+
+export function useSummarize(conversationId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      call(
+        api.POST("/api/conversations/{conversation_id}/summarize", {
+          params: { path: { conversation_id: conversationId } },
+        }),
+      ),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.conversation(conversationId) }),
+  });
+}
+
+export function useUpdatePreference(customerId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { channel: Channel; consent: Consent; dnd: boolean }) =>
+      call(
+        api.PUT("/api/customers/{customer_id}/preferences", {
+          params: { path: { customer_id: customerId } },
+          body: input,
+        }),
+      ),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.customer(customerId) });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+}
+
+export function useOutreach(customerId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ channel, body, idempotencyKey }: SendInput) =>
+      call(
+        api.POST("/api/customers/{customer_id}/outreach", {
+          params: {
+            path: { customer_id: customerId },
+            header: { "idempotency-key": idempotencyKey },
+          },
+          body: { channel, body },
+        }),
+      ),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.customer(customerId) });
+      qc.invalidateQueries({ queryKey: keys.conversations() });
+    },
+  });
+}
+
+export function useComplianceRules() {
+  return useQuery({
+    queryKey: ["compliance-rules"],
+    queryFn: () => call(api.GET("/api/compliance/rules")),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useComplianceChecks(filters: ComplianceFilters) {
+  return useInfiniteQuery({
+    queryKey: keys.complianceChecks(filters),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      call(
+        api.GET("/api/compliance/checks", {
+          params: { query: { ...filters, cursor: pageParam ?? undefined, limit: 50 } },
+        }),
+      ),
+    getNextPageParam: (last) => last.next_cursor ?? null,
   });
 }

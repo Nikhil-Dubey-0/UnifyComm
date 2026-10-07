@@ -65,7 +65,12 @@ export function MessageItem({
       </div>
 
       <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
-        {m.sender_type === "system" && <Bot className="size-3" aria-label="Automatic" />}
+        {m.sender_type === "system" && (
+          <>
+            <Bot className="size-3" aria-hidden />
+            <span>{m.is_template ? "Automatic acknowledgement" : "System"} ·</span>
+          </>
+        )}
         {!inbound && m.sender_type === "agent" && agentName && <span>{agentName} ·</span>}
         <ChannelIcon channel={m.channel} className="size-3" />
         <span>{CHANNEL_LABEL[m.channel]}</span>

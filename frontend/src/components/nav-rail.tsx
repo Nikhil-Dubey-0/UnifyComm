@@ -1,6 +1,6 @@
 "use client";
 
-import { Inbox, LogOut, Smartphone, Users } from "lucide-react";
+import { Inbox, LogOut, ShieldCheck, SlidersHorizontal, Smartphone, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -13,6 +13,8 @@ import { type LiveStatus, useLiveStatus } from "@/lib/ws";
 const NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/customers", label: "Customers", icon: Users },
+  { href: "/admin/preferences", label: "Channel preferences", icon: SlidersHorizontal },
+  { href: "/admin/compliance", label: "Compliance log", icon: ShieldCheck },
   { href: "/simulator", label: "Customer simulator", icon: Smartphone },
 ];
 

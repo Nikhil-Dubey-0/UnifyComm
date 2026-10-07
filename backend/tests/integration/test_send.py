@@ -17,6 +17,8 @@ from tests.integration.helpers import (
     run_all_jobs,
 )
 
+AGENT_MESSAGES = select(func.count()).select_from(Message).where(Message.sender_type == "agent")
+
 
 @pytest.fixture
 async def rahul_conversation(client, worker, seeded) -> int:
@@ -41,7 +43,9 @@ async def test_allowed_send_is_queued_then_delivered(
     r = await send(client, rahul_conversation, auth_headers, "key-allowed-001")
     assert r.status_code == 201
     data = r.json()
-    assert data["compliance"] == {"allowed": True, "results": []}
+    assert data["compliance"]["allowed"] is True
+    assert len(data["compliance"]["results"]) == 8
+    assert all(c["passed"] and c["reason"] is None for c in data["compliance"]["results"])
     msg = data["message"]
     assert (msg["direction"], msg["sender_type"], msg["purpose"], msg["delivery_status"]) == (
         "outbound",
@@ -65,10 +69,12 @@ async def test_allowed_send_is_queued_then_delivered(
         params={"channel": "whatsapp", "address": "+91 98765 43210"},
         headers=auth_headers,
     )
-    assert [(m["direction"], m["body"]) for m in thread.json()] == [
-        ("inbound", "My payment failed"),
-        ("outbound", "We are checking this."),
+    assert [(m["direction"], m["sender_type"]) for m in thread.json()] == [
+        ("inbound", "customer"),
+        ("outbound", "system"),  # the acknowledgement
+        ("outbound", "agent"),
     ]
+    assert thread.json()[-1]["body"] == "We are checking this."
 
 
 async def test_same_idempotency_key_returns_the_stored_result(
@@ -79,12 +85,13 @@ async def test_same_idempotency_key_returns_the_stored_result(
     assert first.status_code == again.status_code == 201
     assert again.json()["message"]["id"] == first.json()["message"]["id"]
     assert again.json()["message"]["body"] == "We are checking this."
-    outbound = select(func.count()).select_from(Message).where(Message.direction == "outbound")
-    assert await db.scalar(outbound) == 1
-    assert (
-        await db.scalar(select(func.count()).select_from(Job).where(Job.kind == "deliver_message"))
-        == 1
+    assert await db.scalar(AGENT_MESSAGES) == 1
+    reply_jobs = (
+        select(func.count())
+        .select_from(Job)
+        .where(Job.payload["message_id"].as_integer() == first.json()["message"]["id"])
     )
+    assert await db.scalar(reply_jobs) == 1
 
 
 async def test_concurrent_double_click_sends_once(client, db, auth_headers, rahul_conversation):
@@ -93,8 +100,7 @@ async def test_concurrent_double_click_sends_once(client, db, auth_headers, rahu
     )
     assert {r.status_code for r in results} == {201}
     assert len({r.json()["message"]["id"] for r in results}) == 1
-    outbound = select(func.count()).select_from(Message).where(Message.direction == "outbound")
-    assert await db.scalar(outbound) == 1
+    assert await db.scalar(AGENT_MESSAGES) == 1
 
 
 async def test_key_reused_on_another_conversation_conflicts(
@@ -117,7 +123,7 @@ async def test_missing_idempotency_key_is_rejected(client, auth_headers, rahul_c
 
 
 async def test_blocked_send_is_recorded_not_queued(
-    client, db, auth_headers, rahul_conversation, monkeypatch
+    app, client, db, auth_headers, rahul_conversation
 ):
     rules = [
         Rule(
@@ -127,7 +133,7 @@ async def test_blocked_send_is_recorded_not_queued(
         ),
         Rule("test.always_passes", "passes", lambda ctx: RuleResult("test.always_passes", True)),
     ]
-    monkeypatch.setattr("app.api.conversations.RULES", rules)
+    app.state.rules = rules
     r = await send(client, rahul_conversation, auth_headers, "key-blocked-01")
     assert r.status_code == 201
     data = r.json()
@@ -138,14 +144,22 @@ async def test_blocked_send_is_recorded_not_queued(
         ("test.always_passes", True, None),
     ]
 
-    checks = list(await db.scalars(select(ComplianceCheck).order_by(ComplianceCheck.id)))
+    checks = list(
+        await db.scalars(
+            select(ComplianceCheck)
+            .where(ComplianceCheck.message_id == data["message"]["id"])
+            .order_by(ComplianceCheck.id)
+        )
+    )
     assert len(checks) == 2
     assert checks[0].context["purpose"] == "service_reply"
     assert checks[0].context["consent"] == "opted_in" and "body" not in checks[0].context
-    assert (
-        await db.scalar(select(func.count()).select_from(Job).where(Job.kind == "deliver_message"))
-        == 0
+    reply_jobs = (
+        select(func.count())
+        .select_from(Job)
+        .where(Job.payload["message_id"].as_integer() == data["message"]["id"])
     )
+    assert await db.scalar(reply_jobs) == 0
     conv = await db.get(Conversation, rahul_conversation)
     assert conv.status == "open" and conv.first_response_at is None
 

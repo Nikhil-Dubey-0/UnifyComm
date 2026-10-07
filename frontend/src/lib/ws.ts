@@ -44,6 +44,7 @@ export function applyEvent(qc: QueryClient, event: ServerEvent): void {
   }
   if (event.type.startsWith("message.")) {
     qc.invalidateQueries({ queryKey: ["simulator-thread"] });
+    qc.invalidateQueries({ queryKey: ["compliance-checks"] });
   }
   if (event.type.startsWith("conversation.")) {
     qc.invalidateQueries({ queryKey: ["customer"] });

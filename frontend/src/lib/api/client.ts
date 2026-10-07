@@ -11,6 +11,8 @@ export type Agent = Schemas["AgentOut"];
 export type AiResult = Schemas["AiResultOut"];
 export type Channel = Schemas["Channel"];
 export type ComplianceCheck = Schemas["ComplianceCheckOut"];
+export type ComplianceLogItem = Schemas["ComplianceLogItem"];
+export type Consent = Schemas["Consent"];
 export type ConversationDetail = Schemas["ConversationDetail"];
 export type ConversationListItem = Schemas["ConversationListItem"];
 export type ConversationOut = Schemas["ConversationOut"];
@@ -18,11 +20,15 @@ export type ConversationStatus = Schemas["ConversationStatus"];
 export type CustomerDetail = Schemas["CustomerDetail"];
 export type CustomerWithContacts = Schemas["CustomerWithContacts"];
 export type DeliveryStatus = Schemas["DeliveryStatus"];
+export type Draft = Schemas["DraftOut"];
 export type Message = Schemas["MessageWithAnalysis"];
+export type Preference = Schemas["PreferenceOut"];
 export type Priority = Schemas["Priority"];
 export type SendResponse = Schemas["SendResponse"];
 export type SimulatorContact = Schemas["SimulatorContact"];
 export type SimulatorThreadMessage = Schemas["SimulatorThreadMessage"];
+export type Summary = Schemas["SummaryOut"];
+export type SummaryJob = Schemas["SummaryJobOut"];
 
 /** An API failure in the backend's `{"error": {"code", "message"}}` shape. */
 export class ApiError extends Error {

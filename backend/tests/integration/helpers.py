@@ -31,3 +31,40 @@ RAHUL_PHONE = "+91 98765 43210"
 RAHUL_EMAIL = "rahul.sharma@example.com"
 PRIYA_PHONE = "+91 91234 56780"
 AMIT_PHONE = "+91 99887 76655"
+
+
+class FakeLLM:
+    """Records requests; returns canned output or raises `error`. Tests never call OpenAI."""
+
+    draft_model = "fake-llm-draft"
+    summary_model = "fake-llm-summary"
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.draft_requests: list = []
+        self.summary_requests: list = []
+
+    async def draft(self, request):
+        from app.ai.llm import DraftOutput
+
+        self.draft_requests.append(request)
+        if self.error:
+            raise self.error
+        return DraftOutput(
+            reply=f"Draft reply #{len(self.draft_requests)}",
+            verify_hints=["Check the transaction status", "  "],
+        )
+
+    async def summarize(self, request):
+        from app.ai.llm import SummaryOutput
+
+        self.summary_requests.append(request)
+        if self.error:
+            raise self.error
+        return SummaryOutput(
+            summary=f"Summary #{len(self.summary_requests)}",
+            customer_issue="Payment failed but money was deducted.",
+            actions_taken=[],
+            open_items=["Check the deduction"],
+            customer_mood="frustrated",
+        )

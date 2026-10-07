@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.enums import Channel, Consent, ContactKind
 from app.schemas.conversations import ConversationOut
@@ -38,6 +38,7 @@ class CustomerOut(BaseModel):
 
 class CustomerWithContacts(CustomerOut):
     contacts: list[ContactOut]
+    preferences: list[PreferenceOut]
 
 
 class CustomerDetail(BaseModel):
@@ -49,3 +50,14 @@ class CustomerDetail(BaseModel):
 
 class LinkRequest(BaseModel):
     source_customer_id: int
+
+
+class PreferenceUpdate(BaseModel):
+    channel: Channel
+    consent: Consent
+    dnd: bool
+
+
+class OutreachRequest(BaseModel):
+    channel: Channel
+    body: str = Field(max_length=100_000)

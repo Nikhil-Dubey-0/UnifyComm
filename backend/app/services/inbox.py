@@ -23,7 +23,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.intent_map import IntentMap
-from app.enums import AiTask, ConversationStatus, Priority
+from app.enums import AiTask, ConversationStatus, DeliveryStatus, Priority, SenderType
 from app.errors import NotFound, Unprocessable
 from app.models import (
     ComplianceCheck,
@@ -46,8 +46,10 @@ from app.schemas.conversations import (
     MessageAi,
     MessagePreview,
     MessageWithAnalysis,
+    SummaryJobOut,
     SummaryOut,
 )
+from app.services import summaries
 from app.services.routing import IntentReading, needs_review
 
 PREVIEW_CHARS = 140
@@ -180,7 +182,16 @@ async def _last_messages(
         return {}
     rows = await session.scalars(
         select(Message)
-        .where(Message.conversation_id.in_(conversation_ids))
+        # Automatic acknowledgements would hide what the customer wrote, and a blocked
+        # message was never sent.
+        .where(
+            Message.conversation_id.in_(conversation_ids),
+            Message.sender_type != SenderType.system,
+            or_(
+                Message.delivery_status.is_(None),
+                Message.delivery_status != DeliveryStatus.blocked,
+            ),
+        )
         .ext(distinct_on(Message.conversation_id))
         .order_by(Message.conversation_id, Message.id.desc())
     )
@@ -274,4 +285,9 @@ async def conversation_detail(
             for m in messages
         ],
         latest_summary=SummaryOut.model_validate(summary) if summary else None,
+        summary_job=(
+            SummaryJobOut(job_id=job.id, status=job.status, updated_at=job.updated_at)
+            if (job := await summaries.latest_job(session, conversation_id))
+            else None
+        ),
     )

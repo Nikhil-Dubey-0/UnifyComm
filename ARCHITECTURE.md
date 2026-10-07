@@ -140,9 +140,10 @@ UnifyComm/
 │   │   ├── api/                     # routers only: parse, call service, return
 │   │   ├── services/                # ingest, identity, conversations, routing, outbound,
 │   │   │                            # analysis, inbox, customers, simulator, auth, system,
-│   │   │                            # drafts, summaries, events, jobs, metrics
+│   │   │                            # drafts, summaries, ai_context, acknowledgement,
+│   │   │                            # compliance_log, events, jobs, metrics
 │   │   ├── realtime/                # hub.py (in-memory WS fan-out), bridge.py (LISTEN)
-│   │   ├── compliance/              # engine.py + rules.py: pure functions, no I/O
+│   │   ├── compliance/              # engine.py, rules.py, patterns.py: pure functions, no I/O
 │   │   ├── channels/                # base.py, registry.py, simulator.py, twilio_whatsapp.py, gmail.py
 │   │   ├── ai/
 │   │   │   ├── contracts.py         # Prediction, TextClassifier (torch-free)
@@ -308,6 +309,7 @@ jobs, audit_log, system_status: standalone
 | last_error | text null | |
 | created_at, updated_at | timestamptz not null | |
 | | | Partial index `(run_after, id) WHERE status = 'pending'` |
+| | | **Partial UNIQUE `((payload->>'conversation_id')) WHERE kind = 'summarize_conversation' AND status IN ('pending','running')`**: at most one queued summary per conversation; enqueue uses `ON CONFLICT DO NOTHING` |
 
 **conversation_summaries**
 | Column | Type | Notes |
@@ -403,11 +405,13 @@ job:               pending ──claimed──► running ──ok──► done
 
 ### 6.4 Draft (API, synchronous)
 
-`POST /api/conversations/{id}/drafts` builds the context (latest summary, last 12 messages, category, intent, sentiment, channel, customer first name), redacts PII (§7.7), and calls `LLMClient.draft()` with a 20 s timeout. It stores and returns a `reply_drafts` row. If the LLM is unavailable it returns `503 {"error": {"code": "llm_unavailable"}}`, and the UI shows "AI unavailable" while the composer keeps working.
+`POST /api/conversations/{id}/drafts {instructions?, channel?}` builds the context (latest summary, last 12 messages, category, intent, sentiment of the latest inbound, reply channel, customer first name for verified customers, agent name), redacts PII (§7.7), and calls `LLMClient.draft()` with a 20 s timeout. Blocked messages and the acknowledgement template are not part of the context. `channel` defaults to the latest inbound message's channel. The request releases its DB connection during the LLM call. It stores and returns a `reply_drafts` row; earlier `pending` drafts of the conversation become `discarded` (regenerate). A conversation without an inbound message returns `409 no_customer_message`. If the LLM is unavailable it returns `503 {"error": {"code": "llm_unavailable"}}`, and the UI shows "AI unavailable" while the composer keeps working.
+
+Draft outcomes: an allowed send with `draft_id` marks that draft `sent_as_is` (same text after trimming) or `edited`; every other `pending` draft of the conversation becomes `discarded`.
 
 ### 6.5 Summary (worker, job `summarize_conversation`)
 
-Inputs are the previous summary and messages after its `covers_until_message_id`, redacted. The job calls `LLMClient.summarize()`, inserts a `conversation_summaries` row, and NOTIFYs `summary.updated`. It runs on demand (`POST .../summarize` → 202) or by threshold.
+Inputs are the previous summary and messages after its `covers_until_message_id` (at most 50, without blocked messages and the template), redacted. The job calls `LLMClient.summarize()`, inserts a `conversation_summaries` row whose `covers_until_message_id` is the newest message id in the conversation, and NOTIFYs `summary.updated`. It runs on demand (`POST .../summarize` → 202, or `503 llm_unavailable` when the LLM is not configured) or by threshold (§6.2 step 6; only when the LLM is configured). At most one summary job per conversation is pending or running (§5.2 index); a second request returns the existing job id. When the job fails permanently it NOTIFYs `summary.updated` so the UI can show "Summary unavailable" next to the last summary. `ConversationDetail.summary_job` carries the latest summary job's `{job_id, status, updated_at}` for the pending and unavailable states.
 
 ### 6.6 Link an unverified sender (API)
 
@@ -479,7 +483,7 @@ All rules are evaluated and stored, and any failure blocks the message. Rules ar
 Basis: TRAI's TCCCPR restricts promotional communication to 09:00–21:00 and exempts service and transactional messages from DND. Meta's WhatsApp Business Platform allows free-form messages only within 24 h of the user's last message. Quote exact regulation text in the report only after reading the source.
 
 ### 7.7 PII redaction before any LLM call
-Card numbers → `[CARD]`, Aadhaar-format numbers → `[AADHAAR]`, phone numbers → `[PHONE]`, email addresses → `[EMAIL]`, 4–8 digit codes next to OTP/PIN/CVV → `[CODE]`. The patterns are shared with `content.sensitive_data`.
+Card numbers → `[CARD]`, Aadhaar-format numbers → `[AADHAAR]`, phone numbers → `[PHONE]`, email addresses → `[EMAIL]`, 3–8 digit codes next to OTP/PIN/CVV → `[CODE]` (3 because CVVs have 3 digits). The patterns live in `app/compliance/patterns.py` and are shared with `content.sensitive_data`. Applied to message bodies, the previous summary and the agent's draft instructions.
 
 ---
 
@@ -647,20 +651,20 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | GET | `/simulator/thread` | `?channel=&address=` | messages to and from that address on that channel |
 | POST | `/webhooks/twilio/whatsapp` | Twilio form | `200` empty TwiML |
 | POST | `/webhooks/twilio/status` | Twilio form | `200` |
-| GET | `/conversations` | `?status=&category=&priority=&assignee=me\|unassigned\|<id>&q=&cursor=&limit=` | list of `ConversationSummary` |
-| GET | `/conversations/{id}` | | `ConversationDetail` (conversation, customer, messages with AI results and compliance checks, latest summary) |
+| GET | `/conversations` | `?status=&category=&priority=&assignee=me\|unassigned\|<id>&q=&cursor=&limit=` | list of `ConversationSummary`; `last_message` skips the acknowledgement template and blocked messages |
+| GET | `/conversations/{id}` | | `ConversationDetail` (conversation, customer, messages with AI results and compliance checks, latest summary, `summary_job`) |
 | PATCH | `/conversations/{id}` | `{status?, assignee_id?}` | `Conversation` |
-| POST | `/conversations/{id}/summarize` | | `202 {job_id}` |
-| POST | `/conversations/{id}/drafts` | `{instructions?}` | `201 Draft` or `503 llm_unavailable` |
+| POST | `/conversations/{id}/summarize` | | `202 {job_id}` (an already queued job's id if one exists) or `503 llm_unavailable` |
+| POST | `/conversations/{id}/drafts` | `{instructions?, channel?}` | `201 Draft {id, conversation_id, based_on_message_id, body, verify_hints, model, outcome, created_at}`, `409 no_customer_message` or `503 llm_unavailable` |
 | POST | `/conversations/{id}/send` | header `Idempotency-Key`; `{channel, body, draft_id?}` | `201 {message, compliance: {allowed, results[]}}` |
 | POST | `/messages/{id}/analyze` | | `202 {job_id}` |
 | POST | `/messages/{id}/retry` | | `202` (failed deliveries only) |
-| GET | `/customers` | `?q=` | list |
+| GET | `/customers` | `?q=&cursor=&limit=` | list of customers with `contacts` and `preferences` (the preferences admin page reads it) |
 | GET | `/customers/{id}` | | `{customer, contacts, preferences, conversations}` |
 | POST | `/customers/{id}/link` | `{source_customer_id}` | `Customer` |
-| PUT | `/customers/{id}/preferences` | `{channel, consent, dnd}` | `Preference` |
-| POST | `/customers/{id}/outreach` | header `Idempotency-Key`; `{channel, body}` | same as send |
-| GET | `/compliance/checks` | `?passed=&rule_id=&cursor=` | list |
+| PUT | `/customers/{id}/preferences` | `{channel, consent, dnd}` | `Preference` (upsert; any agent; writes `audit_log` `preferences.update` with before and after) |
+| POST | `/customers/{id}/outreach` | header `Idempotency-Key`; `{channel, body}` | same as send. Joins the customer's active conversation (§7.2) or starts one with status `pending` |
+| GET | `/compliance/checks` | `?passed=&rule_id=&cursor=&limit=` | newest first: `{id, rule_id, passed, reason, context, evaluated_at, message: {id, conversation_id, channel, purpose, sender_type, delivery_status, is_template}, customer: {id, display_name}}` |
 | GET | `/compliance/rules` | | `[{rule_id, description}]` |
 | GET | `/metrics/summary` | `?days=` | §15 metrics (Session 5) |
 
@@ -686,9 +690,9 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | `message.created` | any message row is inserted |
 | `message.analyzed` | AI results written |
 | `message.status_changed` | outbound delivery status changes |
-| `summary.updated` | new summary row |
+| `summary.updated` | new summary row, or the summary job failed permanently |
 
-Client behaviour: any event invalidates `["conversations"]` and `["conversation", conversation_id]`; `message.*` events also invalidate `["simulator-thread"]`, and `conversation.*` events invalidate `["customer"]`. On reconnect, and on `resync`, it invalidates everything. Close code 1008 means the token is invalid: the client logs out instead of reconnecting. The client never applies event payloads as state.
+Client behaviour: any event invalidates `["conversations"]` and `["conversation", conversation_id]`; `message.*` events also invalidate `["simulator-thread"]` and `["compliance-checks"]`, and `conversation.*` events invalidate `["customer"]`. On reconnect, and on `resync`, it invalidates everything. Close code 1008 means the token is invalid: the client logs out instead of reconnecting. The client never applies event payloads as state.
 
 Server: the API lifespan starts `EventBridge`, which holds a dedicated `asyncpg` connection, runs `add_listener('uc_events', ...)` and fans out to the in-memory hub. If the connection drops, it reconnects with backoff (1 s → 30 s) and broadcasts `{"type": "resync"}` so clients refetch.
 
@@ -699,9 +703,9 @@ Server: the API lifespan starts `EventBridge`, which holds a dedicated `asyncpg`
 | Kind | Payload | Handler | Idempotency |
 |---|---|---|---|
 | `analyze_message` | `{message_id}` | §6.2 | Upsert on `(message_id, task)` |
-| `summarize_conversation` | `{conversation_id}` | §6.5 | Skips if no new messages since last summary |
+| `summarize_conversation` | `{conversation_id}` | §6.5 | Skips if no new messages since last summary; one active job per conversation (unique index) |
 | `deliver_message` | `{message_id}` | §6.3 step 7 | Skips unless status is `queued` |
-| `send_acknowledgement` | `{conversation_id}` | Builds the template, goes through the §6.3 flow with `sender_type=system` | Skips if an acknowledgement already exists in the conversation |
+| `send_acknowledgement` | `{conversation_id}` | Builds the template (`services/acknowledgement.py`) on the channel of the conversation's first message, goes through the §6.3 flow with `sender_type=system`, `is_template=true`, `purpose=service_reply` | `idempotency_key = ack-{conversation_id}`: one acknowledgement per conversation |
 
 Claim query:
 
@@ -771,6 +775,8 @@ Performance targets (dev laptop): ingest p95 < 150 ms; AI labels visible < 2 s a
 
 Measured in Session 3 (real models, api + worker + `next dev` running, `scripts/check_real_models.py`): labels visible 0.70–0.78 s after a simulator message (median 0.73 s, including the worker's 500 ms idle poll); model latency intent median 50 ms, sentiment median 113 ms; worker working set 683 MB. Worker startup in real mode takes 30–40 s before the first labels (mostly `import transformers` under load); it happens in the background (§3).
 
+Measured in Session 4 (`gpt-6-luna`, `scripts/check_llm.py` and the demo spec): drafts 4.2–7.7 s, summaries 3.5 s, about 550 input and 170–280 output tokens per draft. After a worker restart in real mode, a message that arrived while it was down got its labels and acknowledgement after 35 s.
+
 Memory budget (7.3 GB RAM): PostgreSQL ~0.2 GB, api ~0.2 GB, worker ~1 GB (real mode), Next dev ~1 GB, browser and editor the rest. Never run model training at the same time as the app. Use `next build && next start` for the demo.
 
 Security: `.env` is never committed. Twilio signatures are validated. CORS is limited to the frontend origin. PII is redacted before LLM calls. OpenAI requests use `store=False`. Secrets and message bodies are not logged above DEBUG. Passwords use Argon2.
@@ -838,13 +844,13 @@ Metrics for the report (Session 5, `/metrics/summary`): first-response time, dra
 - **Exit:** golden tests pass; real labels in the UI < 2 s; stop worker → "Analysis pending" → restart → labels appear; boundary test green.
 
 ### Session 4: OpenAI assistance and compliance (the complete loop)
-- [ ] `LLMClient` (Responses API, `responses.parse`, `store=False`, timeout, retry), prompt files, PII redaction, `LLM_ENABLED`.
-- [ ] Drafts: generate, regenerate, verify hints, outcome tracking on send.
-- [ ] Summaries: on demand and every N messages; staleness ("3 new messages since this summary").
-- [ ] Compliance: all rules in §7.6 with unit tests, purpose detection, stored checks, blocked message UI with reasons, preferences admin page, compliance log page.
-- [ ] Outreach (proactive) endpoint and UI. Acknowledgement template on new conversations.
-- [ ] Delivery retries, failed state, retry button.
-- [ ] Playwright demo script §17 on the simulator.
+- [x] `LLMClient` (Responses API, `responses.parse`, `store=False`, timeout, retry), prompt files, PII redaction, `LLM_ENABLED`.
+- [x] Drafts: generate, regenerate, verify hints, outcome tracking on send.
+- [x] Summaries: on demand and every N messages; staleness ("3 new messages since this summary").
+- [x] Compliance: all rules in §7.6 with unit tests, purpose detection, stored checks, blocked message UI with reasons, preferences admin page, compliance log page.
+- [x] Outreach (proactive) endpoint and UI. Acknowledgement template on new conversations.
+- [x] Delivery retries, failed state, retry button. (Backend and button existed since Sessions 1–2.)
+- [x] Playwright demo script §17 on the simulator (`frontend/src/e2e/demo.spec.ts`: steps 1–5 with the LLM on, step 7 with it off; step 6 by hand, see the `run-demo` skill).
 - **Exit:** demo script passes end-to-end on the simulator. With `OPENAI_API_KEY` empty, the UI shows "AI unavailable" and manual send works.
 
 ### Session 5: Real channels, metrics, hardening

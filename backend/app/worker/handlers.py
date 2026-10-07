@@ -12,11 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import text_prep
 from app.ai.intent_map import IntentMap
+from app.ai.llm import LLMClient
 from app.channels.registry import AdapterRegistry
+from app.compliance.engine import Rule
 from app.config import Settings
 from app.enums import AiTask, Direction, JobKind
 from app.models import Message
-from app.services import analysis, outbound
+from app.services import acknowledgement, analysis, outbound, summaries
 from app.services.analysis import TaskOutcome
 from app.worker.classifiers import ClassifierProvider
 
@@ -29,6 +31,8 @@ class WorkerContext:
     sessionmaker: Any
     classifiers: ClassifierProvider
     registry: AdapterRegistry
+    rules: list[Rule]
+    llm: LLMClient
     intent_map: IntentMap
     worker_id: str
 
@@ -72,6 +76,12 @@ async def analyze_message(
         intent_map=ctx.intent_map,
         floor=ctx.settings.intent_confidence_floor,
     )
+    await summaries.maybe_enqueue(
+        session,
+        message.conversation_id,
+        every_n=ctx.settings.summary_every_n_messages,
+        llm_configured=ctx.settings.llm_configured,
+    )
 
 
 async def deliver_message(
@@ -86,11 +96,34 @@ async def deliver_message_failed(
     await outbound.mark_delivery_failed(session, payload["message_id"], error)
 
 
+async def send_acknowledgement(
+    ctx: WorkerContext, session: AsyncSession, payload: dict[str, Any]
+) -> None:
+    await acknowledgement.acknowledge(
+        session, payload["conversation_id"], settings=ctx.settings, rules=ctx.rules
+    )
+
+
+async def summarize_conversation(
+    ctx: WorkerContext, session: AsyncSession, payload: dict[str, Any]
+) -> None:
+    await summaries.summarize(session, payload["conversation_id"], ctx.llm)
+
+
+async def summarize_conversation_failed(
+    session: AsyncSession, payload: dict[str, Any], error: str
+) -> None:
+    await summaries.notify_failed(session, payload["conversation_id"])
+
+
 HANDLERS: dict[JobKind, Handler] = {
     JobKind.analyze_message: analyze_message,
     JobKind.deliver_message: deliver_message,
+    JobKind.send_acknowledgement: send_acknowledgement,
+    JobKind.summarize_conversation: summarize_conversation,
 }
 
 ON_PERMANENT_FAILURE: dict[JobKind, FailureHook] = {
     JobKind.deliver_message: deliver_message_failed,
+    JobKind.summarize_conversation: summarize_conversation_failed,
 }

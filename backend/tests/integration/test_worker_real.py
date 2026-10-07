@@ -26,7 +26,8 @@ def real_worker(settings, sessionmaker):
 
 async def test_real_models_label_and_route(client, db, seeded, real_worker, settings):
     r = (await post_inbound(client, "sms", AMIT_PHONE, "My card was stolen yesterday")).json()
-    assert await run_all_jobs(real_worker) == 1
+    # analyze_message, send_acknowledgement, deliver_message (the acknowledgement)
+    assert await run_all_jobs(real_worker) == 3
 
     rows = {
         row.task: row

@@ -11,10 +11,18 @@ Update this block at the end of every session: tick finished items, note carry-o
 - [x] Session 1: backend foundation and walking skeleton (backend half), done 2026-10-06
 - [x] Session 2: frontend workspace, walking skeleton complete, done 2026-10-06
 - [x] Session 3: real models (intent Plan A or B, sentiment), done 2026-10-07
-- [ ] Session 4: OpenAI drafts and summaries, compliance, full demo on simulator
+- [x] Session 4: OpenAI drafts and summaries, compliance, full demo on simulator, done 2026-10-07
 - [ ] Session 5: Gmail + Twilio WhatsApp, metrics, hardening, README
 
 Notes for the next session:
+- **Session 4 result (2026-10-07):** all §16 Session 4 items done. Exit criteria verified on the running stack (real models + `gpt-6-luna`): `src/e2e/demo.spec.ts` steps 1–5 pass (run three times without a DB reset in between; the spec resolves the seeded customers' active conversations and restores §17 preferences itself); step 7 passes with the api started as `OPENAI_API_KEY= uv run uvicorn ...` ("AI unavailable" in composer and summary, manual reply delivered); step 6 checked by hand (labels + acknowledgement 35 s after a worker restart). Smoke spec still passes. 284 tests + 17 `-m models` green; `npm run build`, tsc, lint clean.
+- Measured: drafts 4.2–7.7 s, summary 3.5 s (target < 10 s). `uv run python -m scripts.check_llm` prints real drafts for fixed cases (injection, PII, email, agent instructions) and runs them through the content rules; re-read its output whenever `config/prompts/*.md` changes.
+- Session 4 contract changes (all in ARCHITECTURE): rules built by `compliance/rules.py:build_rules(promo_start, promo_end)` and held on `app.state.rules` / `WorkerContext.rules` (tests swap `app.state.rules`); shared patterns in `compliance/patterns.py` (redaction of 3–8 digit codes, not 4–8); acknowledgement job with `idempotency_key = ack-{conversation_id}` on the first message's channel; outreach joins the active conversation or creates one as `pending`; `POST /drafts {instructions?, channel?}`, 409 `no_customer_message`; regenerating or sending discards other pending drafts; `/summarize` returns 503 when the LLM is off; partial unique index `uq_jobs_active_summary` (migration `6e6848556d46`) dedupes summary jobs; `ConversationDetail.summary_job`; `summary.updated` also on permanent failure; `GET /customers` items carry `preferences`; `GET /compliance/checks` item shape; inbox `last_message` skips the template and blocked messages; `["compliance-checks"]` invalidated on `message.*`.
+- New project skills: `add-compliance-rule`, `run-demo` (step 6 and step 7 procedure).
+- Test data gotcha: never put `Date.now()` (13 digits) in message text. A value that passes Luhn is correctly blocked as a card number; the demo spec uses base-36 markers.
+- `app/ai/llm.py` builds the OpenAI client lazily; tests use `tests/integration/helpers.FakeLLM` via `app.state.llm` / `worker.llm` and never call OpenAI. The integration suite now takes ~5 min.
+- Windows asyncio logs an occasional `ConnectionResetError [WinError 10054]` from `_ProactorBasePipeTransport` when a browser closes abruptly. Harmless; Session 5 hardening may filter it.
+- Not done, by design: Step 6 is not automated in Playwright (needs process control). The `frontend-design` skill is still not installed. The dev DB holds demo and smoke data: run `uv run python -m scripts.seed --reset` before a demo.
 - **Session 3 result (2026-10-07):** real models live. `.env` now has `AI_MODE=real` (tests still force fake; set it back to `fake` for a lighter worker). Golden tests: intent 6/6 identical to the export run, sentiment 4/4 identical to the notebook. Exit criteria verified on the running stack: real labels 0.70–0.78 s after a simulator message; stop worker → "Analysis pending" in the UI → restart → labels appear without a reload; Playwright smoke passes in real mode; boundary test green. Measured: intent 50 ms, sentiment 113 ms median; worker 683 MB. 175 tests + 17 `-m models` tests green.
 - Sentiment model: `models/sentiment/hf/` (gitignored), commit `3216a57f2a0d…`, `pytorch_model.bin` (no safetensors on `main`; Transformers 5 loads it with `torch.load(weights_only=True)`), sha256 `4d24a3e32a88…` in `manifest.json`. `scripts/download_models.py` downloads over **IPv4** with resume and checks the Hub's sha256: this network drops connections and stalls on IPv6.
 - Worker real mode preloads both models in a background thread at startup (ARCHITECTURE §3 updated); expect 30–40 s before the first labels after a worker restart, mostly `import transformers` while other processes compete for CPU. A model that fails to load is retried at most once a minute.
@@ -91,6 +99,8 @@ cd backend; uv run python -m scripts.check_walking_skeleton   # needs api + work
 cd backend; uv run python -m scripts.export_openapi
 cd frontend; npm run gen:api; npx tsc --noEmit; npm run lint; npm run build
 cd frontend; npx playwright test               # uses Microsoft Edge; starts or reuses api, worker, web
+cd frontend; npx playwright test src/e2e/demo.spec.ts   # §17 demo; step 7 runs only with the LLM off (run-demo skill)
+cd backend; uv run python -m scripts.check_llm        # real OpenAI drafts + summary on fixed cases (costs cents)
 
 # Models
 cd backend; uv run python -m scripts.download_models   # sentiment, pinned revision, IPv4, resumable, sha256-checked
@@ -117,7 +127,7 @@ Keep this section in sync when commands change.
 
 ### Frontend
 - App Router with client components for the workspace (`"use client"`). Data via TanStack Query hooks over the generated `openapi-fetch` client. No hand-written API types; run `npm run gen:api` after backend schema changes.
-- Query keys: `["conversations", filters]`, `["conversation", id]`, `["customer", id]`, `["simulator-thread", channel, address]`.
+- Query keys: `["conversations", filters]`, `["conversation", id]`, `["customer", id]`, `["customers", q]`, `["simulator-thread", channel, address]`, `["compliance-checks", filters]`.
 - One socket per session in `lib/ws.ts`; events only call `queryClient.invalidateQueries`.
 - Every AI element has three visible states: loading/pending, ok, unavailable.
 - Tailwind + shadcn/ui components. Use the `frontend-design` skill for visual work.

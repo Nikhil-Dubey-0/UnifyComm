@@ -1,4 +1,5 @@
-"""Text preparation before classification (ARCHITECTURE §6.2). Torch-free.
+"""Text preparation before classification (ARCHITECTURE §6.2) and PII redaction before
+LLM calls (§7.7). Torch-free.
 
 Only the text sent to the models is cleaned; the original body is stored and shown as
 received. Token limits (intent 64, sentiment 256) are enforced by the tokenizers; the
@@ -6,6 +7,8 @@ character caps here only bound the work done before tokenizing.
 """
 
 import re
+
+from app.compliance import patterns
 
 _WS = re.compile(r"\s+")
 _MENTION = re.compile(r"@\w+")
@@ -72,3 +75,9 @@ def clean_text(text: str) -> str:
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9\s\.\,\!\?\'\-]", "", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def redact_pii(text: str) -> str:
+    """§7.7: applied to every text sent to the LLM. Patterns are shared with the
+    `content.sensitive_data` compliance rule."""
+    return patterns.redact(text)

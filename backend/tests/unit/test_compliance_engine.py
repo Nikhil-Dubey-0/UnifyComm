@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 from app.compliance.engine import Rule, RuleResult, SendContext, evaluate
-from app.compliance.rules import RULES
 from app.enums import Channel, Consent, Purpose
 
 CTX = SendContext(
@@ -27,8 +26,7 @@ def _rule(rule_id: str, passed: bool) -> Rule:
 
 
 def test_empty_registry_allows():
-    assert RULES == []
-    decision = evaluate(CTX, RULES)
+    decision = evaluate(CTX, [])
     assert decision.allowed and decision.results == []
 
 

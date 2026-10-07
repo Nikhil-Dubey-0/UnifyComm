@@ -1,8 +1,13 @@
-"""Customer reads and the manual link of an unverified sender (ARCHITECTURE §6.6)."""
+"""Customer reads, channel preferences, and the manual link of an unverified sender
+(ARCHITECTURE §6.6)."""
+
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, exists, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.enums import Channel, Consent
 from app.errors import Conflict, NotFound
 from app.models import (
     Agent,
@@ -50,6 +55,7 @@ async def list_customers(
     page, more = customers[:limit], len(customers) > limit
 
     contacts: dict[int, list[CustomerContact]] = {c.id: [] for c in page}
+    preferences: dict[int, list[ChannelPreference]] = {c.id: [] for c in page}
     if page:
         for contact in await session.scalars(
             select(CustomerContact)
@@ -57,11 +63,18 @@ async def list_customers(
             .order_by(CustomerContact.id)
         ):
             contacts[contact.customer_id].append(contact)
+        for pref in await session.scalars(
+            select(ChannelPreference)
+            .where(ChannelPreference.customer_id.in_(preferences))
+            .order_by(ChannelPreference.channel)
+        ):
+            preferences[pref.customer_id].append(pref)
 
     items = [
         CustomerWithContacts(
             **CustomerOut.model_validate(c).model_dump(),
             contacts=[ContactOut.model_validate(x) for x in contacts[c.id]],
+            preferences=[PreferenceOut.model_validate(p) for p in preferences[c.id]],
         )
         for c in page
     ]
@@ -163,3 +176,45 @@ async def link(session: AsyncSession, *, target_id: int, source_id: int, actor: 
     await session.commit()
     await session.refresh(target)
     return target
+
+
+async def update_preference(
+    session: AsyncSession,
+    customer_id: int,
+    *,
+    channel: Channel,
+    consent: Consent,
+    dnd: bool,
+    actor: Agent,
+) -> ChannelPreference:
+    """Upsert one channel's consent and DND flag, with an audit entry. Commits."""
+    customer = await session.get(Customer, customer_id, with_for_update=True)
+    if customer is None:
+        raise NotFound(f"Customer {customer_id} not found.")
+    before = await session.get(ChannelPreference, (customer_id, str(channel)))
+    previous = {"consent": before.consent, "dnd": before.dnd} if before else None
+    now = datetime.now(UTC)
+    values = {"consent": consent, "dnd": dnd, "updated_at": now, "updated_by": actor.id}
+    await session.execute(
+        insert(ChannelPreference)
+        .values(customer_id=customer_id, channel=channel, **values)
+        .on_conflict_do_update(index_elements=["customer_id", "channel"], set_=values)
+    )
+    session.add(
+        AuditLog(
+            actor_agent_id=actor.id,
+            action="preferences.update",
+            target_type="customer",
+            target_id=customer_id,
+            details={
+                "channel": str(channel),
+                "before": previous,
+                "after": {"consent": str(consent), "dnd": dnd},
+            },
+        )
+    )
+    await session.commit()
+    pref = await session.get_one(
+        ChannelPreference, (customer_id, str(channel)), populate_existing=True
+    )
+    return pref

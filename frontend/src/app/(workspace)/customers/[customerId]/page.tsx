@@ -4,14 +4,13 @@ import { ArrowLeft, BadgeCheck, Loader2, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { Avatar, CategoryBadge, ChannelIcon, PriorityBadge, StatusBadge } from "@/components/badges";
+import { Avatar, CategoryBadge, PriorityBadge, StatusBadge } from "@/components/badges";
 import { LinkCustomerDialog } from "@/components/customers/link-customer-dialog";
+import { OutreachDialog } from "@/components/customers/outreach-dialog";
+import { CHANNELS, PreferenceControl } from "@/components/customers/preference-control";
 import type { Channel } from "@/lib/api/client";
-import { CHANNEL_LABEL, formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { useCustomer } from "@/lib/queries";
-import { cn } from "@/lib/utils";
-
-const CONSENT_LABEL = { opted_in: "Opted in", opted_out: "Opted out", unknown: "Unknown" };
 
 export default function CustomerPage() {
   const { customerId } = useParams<{ customerId: string }>();
@@ -32,6 +31,11 @@ export default function CustomerPage() {
     );
   }
   const { customer, contacts, preferences, conversations } = query.data;
+  const kinds = new Set(contacts.map((c) => c.kind));
+  const channels: Channel[] = [
+    ...(kinds.has("phone") ? (["whatsapp", "sms"] as const) : []),
+    ...(kinds.has("email") ? (["email"] as const) : []),
+  ];
 
   return (
     <div className="h-full overflow-y-auto">
@@ -55,6 +59,11 @@ export default function CustomerPage() {
               {customer.id} · since {formatDateTime(customer.created_at)}
             </p>
           </div>
+          <OutreachDialog
+            customerId={customer.id}
+            customerName={customer.display_name}
+            channels={channels}
+          />
           {!customer.verified && (
             <LinkCustomerDialog sourceId={customer.id} sourceName={customer.display_name} />
           )}
@@ -79,35 +88,20 @@ export default function CustomerPage() {
             </ul>
           </Card>
           <Card title="Channel preferences">
-            {preferences.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No consent recorded. Proactive messages need an opt-in.
-              </p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {preferences.map((p) => (
-                  <li key={p.channel} className="flex items-center gap-2">
-                    <ChannelIcon channel={p.channel as Channel} />
-                    <span className="w-20">{CHANNEL_LABEL[p.channel as Channel]}</span>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                        p.consent === "opted_in" && "bg-ok/12 text-ok",
-                        p.consent === "opted_out" && "bg-urgent/10 text-urgent",
-                        p.consent === "unknown" && "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {CONSENT_LABEL[p.consent]}
-                    </span>
-                    {p.dnd && (
-                      <span className="rounded-full bg-high/15 px-2 py-0.5 text-[11px] font-medium text-[oklch(0.5_0.13_62)]">
-                        DND
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="space-y-2">
+              {CHANNELS.map((channel) => (
+                <PreferenceControl
+                  key={channel}
+                  customerId={customer.id}
+                  channel={channel}
+                  preference={preferences.find((p) => p.channel === channel)}
+                />
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Opted out blocks every message on that channel. Proactive messages need an
+              opt-in; DND allows service replies only.
+            </p>
           </Card>
         </div>
 

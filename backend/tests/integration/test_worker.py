@@ -31,7 +31,8 @@ async def test_demo_steps_1_and_2_routing(client, db, worker, seeded, auth_heade
             client, "whatsapp", RAHUL_PHONE, "My payment failed but the money was deducted."
         )
     ).json()
-    assert await run_all_jobs(worker) == 1
+    # analyze_message, send_acknowledgement, deliver_message (the acknowledgement)
+    assert await run_all_jobs(worker) == 3
     conv = await conversation(db, first["conversation_id"])
     assert (conv.category, conv.primary_intent, conv.priority) == (
         "payments_billing",
@@ -52,7 +53,12 @@ async def test_demo_steps_1_and_2_routing(client, db, worker, seeded, auth_heade
         await client.get(f"/api/conversations/{first['conversation_id']}", headers=auth_headers)
     ).json()
     assert detail["conversation"]["category_queue"] == "Payments & Billing"
-    first_msg, second_msg = detail["messages"]
+    first_msg, ack, second_msg = detail["messages"]
+    assert (ack["sender_type"], ack["is_template"], ack["delivery_status"]) == (
+        "system",
+        True,
+        "delivered",
+    )
     assert first_msg["ai"]["intent"]["category"] == "payments_billing"
     assert first_msg["ai"]["intent"]["needs_review"] is False
     assert first_msg["ai"]["intent"]["model_version"] == "fake-1"
@@ -130,22 +136,23 @@ async def test_failed_job_retries_with_backoff_then_fails(
     async def flaky(msg):
         return SendResult(ok=False, error="provider timeout", retryable=True)
 
-    monkeypatch.setattr(sim, "send", flaky)
     inbound = (await post_inbound(client, "whatsapp", RAHUL_PHONE, "hi")).json()
-    await run_all_jobs(worker)  # analysis
+    await run_all_jobs(worker)  # analysis and the acknowledgement
+    monkeypatch.setattr(sim, "send", flaky)
     sent = await client.post(
         f"/api/conversations/{inbound['conversation_id']}/send",
         json={"channel": "whatsapp", "body": "Looking into it"},
         headers={**auth_headers, "Idempotency-Key": "key-flaky-0001"},
     )
     message_id = sent.json()["message"]["id"]
+    reply_job = Job.payload["message_id"].as_integer() == message_id
 
     for attempt in (1, 2):
         before = datetime.now(UTC)
         assert await process_one_job(worker) is True
         job = await db.scalar(
             select(Job)
-            .where(Job.kind == "deliver_message")
+            .where(Job.kind == "deliver_message", reply_job)
             .execution_options(populate_existing=True)
         )
         assert (job.status, job.attempts) == ("pending", attempt)
@@ -157,7 +164,9 @@ async def test_failed_job_retries_with_backoff_then_fails(
 
     assert await process_one_job(worker) is True
     job = await db.scalar(
-        select(Job).where(Job.kind == "deliver_message").execution_options(populate_existing=True)
+        select(Job)
+        .where(Job.kind == "deliver_message", reply_job)
+        .execution_options(populate_existing=True)
     )
     assert (job.status, job.attempts) == ("failed", 3)
     msg = await db.get(Message, message_id)
@@ -175,7 +184,9 @@ async def test_expired_lease_is_reclaimed(db, worker, client):
     )
     await db.commit()
     assert await process_one_job(worker) is True
-    job = await db.scalar(select(Job).execution_options(populate_existing=True))
+    job = await db.scalar(
+        select(Job).where(Job.kind == "analyze_message").execution_options(populate_existing=True)
+    )
     assert (job.status, job.attempts) == ("done", 2)
     assert (
         await db.scalar(
@@ -206,7 +217,9 @@ async def test_lease_expired_after_final_attempt_fails_job(db, worker, client):
     )
     await db.commit()
     assert await process_one_job(worker) is True
-    job = await db.scalar(select(Job).execution_options(populate_existing=True))
+    job = await db.scalar(
+        select(Job).where(Job.kind == "analyze_message").execution_options(populate_existing=True)
+    )
     assert job.status == "failed" and "lease expired" in job.last_error
 
 

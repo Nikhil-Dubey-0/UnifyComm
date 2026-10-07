@@ -39,8 +39,15 @@ async def test_ingest_and_analysis_notify(client, worker, listener, seeded):
     assert all(e["conversation_id"] == r["conversation_id"] for e in got)
 
     await run_all_jobs(worker)
-    got = await drain(listener, 2)
-    assert [e["type"] for e in got] == ["message.analyzed", "conversation.updated"]
+    got = await drain(listener, 5)
+    assert [e["type"] for e in got] == [
+        "message.analyzed",
+        "conversation.updated",
+        # send_acknowledgement, then its delivery
+        "conversation.updated",
+        "message.created",
+        "message.status_changed",
+    ]
 
     await post_inbound(client, "whatsapp", RAHUL_PHONE, "again")
     assert [e["type"] for e in await drain(listener, 2)] == [

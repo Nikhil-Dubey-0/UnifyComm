@@ -7,7 +7,9 @@ import socket
 from datetime import UTC, datetime
 
 from app.ai.intent_map import get_intent_map
+from app.ai.llm import build_llm
 from app.channels.registry import build_registry
+from app.compliance.rules import build_rules
 from app.config import Settings
 from app.db import SessionMaker
 from app.enums import JobKind
@@ -33,6 +35,8 @@ def build_context(
         sessionmaker=sessionmaker,
         classifiers=ClassifierProvider(settings),
         registry=build_registry(),
+        rules=build_rules(settings.promo_window_start, settings.promo_window_end),
+        llm=build_llm(settings),
         intent_map=get_intent_map(),
         worker_id=worker_id or default_worker_id(),
     )
