@@ -905,10 +905,10 @@ Run on a split screen: simulator on the left, agent workspace on the right.
 
 ## 19. Open items
 
-| Item | Owner | Needed by |
-|---|---|---|
-| PostgreSQL 17 installed | user | Session 1 |
-| OpenAI API key in `.env` | user | Session 4 (fake mode works earlier) |
-| Intent weights + notebook (Plan A) | teammate | Session 3 (else Plan B) |
-| Gmail account with 2-Step Verification + app password | user | Session 5 |
-| Twilio account + WhatsApp sandbox join + ngrok/cloudflared | user | Session 5 |
+| Item | Owner | Needed by | Status |
+|---|---|---|---|
+| PostgreSQL 17 installed | user | Session 1 | [x] Done (17.11, 2026-10-06) |
+| OpenAI API key in `.env` | user | Session 4 (fake mode works earlier) | [x] Done (verified with `gpt-6-luna`, 2026-10-07) |
+| Intent weights + notebook (Plan A) | teammate | Session 3 (else Plan B) | [x] Closed: Plan A failed, Plan B `repro-v1` in use (§8.2) |
+| Gmail account with 2-Step Verification + app password | user | Session 5 | [ ] Open |
+| Twilio account + WhatsApp sandbox join + ngrok/cloudflared | user | Session 5 | [ ] Open |
