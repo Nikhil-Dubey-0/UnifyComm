@@ -15,6 +15,7 @@ from app.db import SessionMaker
 from app.enums import JobKind
 from app.services import jobs, system
 from app.worker.classifiers import ClassifierProvider
+from app.worker.email_poller import poll_forever
 from app.worker.handlers import HANDLERS, ON_PERMANENT_FAILURE, WorkerContext
 
 log = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def build_context(
         settings=settings,
         sessionmaker=sessionmaker,
         classifiers=ClassifierProvider(settings),
-        registry=build_registry(),
+        registry=build_registry(settings),
         rules=build_rules(settings.promo_window_start, settings.promo_window_end),
         llm=build_llm(settings),
         intent_map=get_intent_map(),
@@ -106,6 +107,9 @@ async def _heartbeat_forever(ctx: WorkerContext) -> None:
 async def run_forever(ctx: WorkerContext, stop: asyncio.Event) -> None:
     log.info("worker started", extra={"worker_id": ctx.worker_id, "ai_mode": ctx.settings.ai_mode})
     beat = asyncio.create_task(_heartbeat_forever(ctx), name="heartbeat")
+    poller = None
+    if ctx.settings.email_configured:
+        poller = asyncio.create_task(poll_forever(ctx), name="email-poller")
     if ctx.settings.ai_mode == "real":
         # Loading takes 10 s or more; start now so the first message is not delayed.
         # Jobs that arrive meanwhile wait on the provider's lock.
@@ -125,6 +129,8 @@ async def run_forever(ctx: WorkerContext, stop: asyncio.Event) -> None:
                     pass
     finally:
         beat.cancel()
+        if poller is not None:
+            poller.cancel()
         if ctx.settings.ai_mode == "real":
             preload.cancel()
         log.info("worker stopped", extra={"worker_id": ctx.worker_id})

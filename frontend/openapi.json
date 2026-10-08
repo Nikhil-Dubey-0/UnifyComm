@@ -2049,6 +2049,227 @@
         }
       }
     },
+    "/api/metrics/summary": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Metrics Summary",
+        "operationId": "metrics_summary_api_metrics_summary_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 7,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        }
+      }
+    },
+    "/api/webhooks/twilio/whatsapp": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Whatsapp Inbound",
+        "operationId": "whatsapp_inbound_api_webhooks_twilio_whatsapp_post",
+        "responses": {
+          "200": {
+            "description": "Empty TwiML",
+            "content": {
+              "text/xml": {}
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/twilio/status": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Message Status",
+        "operationId": "message_status_api_webhooks_twilio_status_post",
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agents": {
       "get": {
         "tags": [
@@ -2325,6 +2546,36 @@
         ],
         "title": "AiTask"
       },
+      "CategoryCount": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "queue": {
+            "type": "string",
+            "title": "Queue"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "queue",
+          "count"
+        ],
+        "title": "CategoryCount"
+      },
       "Channel": {
         "type": "string",
         "enum": [
@@ -2495,6 +2746,32 @@
           "customer"
         ],
         "title": "ComplianceLogItem"
+      },
+      "ComplianceMetrics": {
+        "properties": {
+          "checked_messages": {
+            "type": "integer",
+            "title": "Checked Messages"
+          },
+          "blocked_messages": {
+            "type": "integer",
+            "title": "Blocked Messages"
+          },
+          "blocks_by_rule": {
+            "items": {
+              "$ref": "#/components/schemas/RuleCount"
+            },
+            "type": "array",
+            "title": "Blocks By Rule"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_messages",
+          "blocked_messages",
+          "blocks_by_rule"
+        ],
+        "title": "ComplianceMetrics"
       },
       "ComplianceOut": {
         "properties": {
@@ -3177,6 +3454,30 @@
         ],
         "title": "CustomerWithContactsRef"
       },
+      "DailyCount": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "inbound": {
+            "type": "integer",
+            "title": "Inbound"
+          },
+          "outbound": {
+            "type": "integer",
+            "title": "Outbound"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "inbound",
+          "outbound"
+        ],
+        "title": "DailyCount"
+      },
       "DeliveryStatus": {
         "type": "string",
         "enum": [
@@ -3258,6 +3559,38 @@
         ],
         "title": "DraftOutcome"
       },
+      "DraftOutcomes": {
+        "properties": {
+          "sent_as_is": {
+            "type": "integer",
+            "title": "Sent As Is",
+            "default": 0
+          },
+          "edited": {
+            "type": "integer",
+            "title": "Edited",
+            "default": 0
+          },
+          "discarded": {
+            "type": "integer",
+            "title": "Discarded",
+            "default": 0
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "sent_as_is",
+          "edited",
+          "discarded",
+          "pending"
+        ],
+        "title": "DraftOutcomes"
+      },
       "DraftRequestIn": {
         "properties": {
           "instructions": {
@@ -3315,6 +3648,43 @@
           "error"
         ],
         "title": "ErrorResponse"
+      },
+      "FirstResponse": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "median_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Seconds"
+          },
+          "p90_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90 Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "median_seconds",
+          "p90_seconds"
+        ],
+        "title": "FirstResponse"
       },
       "HealthOut": {
         "properties": {
@@ -3391,6 +3761,24 @@
         ],
         "title": "JobStatus"
       },
+      "LabelCount": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "count"
+        ],
+        "title": "LabelCount"
+      },
       "LabelScore": {
         "properties": {
           "label": {
@@ -3408,6 +3796,53 @@
           "confidence"
         ],
         "title": "LabelScore"
+      },
+      "LatencyMetrics": {
+        "properties": {
+          "task": {
+            "type": "string",
+            "title": "Task"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "median_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Ms"
+          },
+          "p90_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P90 Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task",
+          "model_name",
+          "count",
+          "median_ms",
+          "p90_ms"
+        ],
+        "title": "LatencyMetrics"
       },
       "LinkRequest": {
         "properties": {
@@ -3801,6 +4236,99 @@
         ],
         "title": "MessageWithAnalysis"
       },
+      "MetricsSummary": {
+        "properties": {
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since"
+          },
+          "conversations": {
+            "type": "integer",
+            "title": "Conversations"
+          },
+          "inbound_by_channel": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Inbound By Channel"
+          },
+          "outbound_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Outbound By Status"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/DailyCount"
+            },
+            "type": "array",
+            "title": "Daily"
+          },
+          "first_response": {
+            "$ref": "#/components/schemas/FirstResponse"
+          },
+          "drafts": {
+            "$ref": "#/components/schemas/DraftOutcomes"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryCount"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "top_intents": {
+            "items": {
+              "$ref": "#/components/schemas/LabelCount"
+            },
+            "type": "array",
+            "title": "Top Intents"
+          },
+          "needs_review": {
+            "type": "integer",
+            "title": "Needs Review"
+          },
+          "sentiment": {
+            "$ref": "#/components/schemas/SentimentMix"
+          },
+          "compliance": {
+            "$ref": "#/components/schemas/ComplianceMetrics"
+          },
+          "ai_latency": {
+            "items": {
+              "$ref": "#/components/schemas/LatencyMetrics"
+            },
+            "type": "array",
+            "title": "Ai Latency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "days",
+          "since",
+          "conversations",
+          "inbound_by_channel",
+          "outbound_by_status",
+          "daily",
+          "first_response",
+          "drafts",
+          "categories",
+          "top_intents",
+          "needs_review",
+          "sentiment",
+          "compliance",
+          "ai_latency"
+        ],
+        "title": "MetricsSummary"
+      },
       "OutreachRequest": {
         "properties": {
           "channel": {
@@ -3990,6 +4518,24 @@
         ],
         "title": "Purpose"
       },
+      "RuleCount": {
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rule_id",
+          "count"
+        ],
+        "title": "RuleCount"
+      },
       "SendRequest": {
         "properties": {
           "channel": {
@@ -4043,6 +4589,32 @@
           "system"
         ],
         "title": "SenderType"
+      },
+      "SentimentMix": {
+        "properties": {
+          "negative": {
+            "type": "integer",
+            "title": "Negative",
+            "default": 0
+          },
+          "neutral": {
+            "type": "integer",
+            "title": "Neutral",
+            "default": 0
+          },
+          "positive": {
+            "type": "integer",
+            "title": "Positive",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "negative",
+          "neutral",
+          "positive"
+        ],
+        "title": "SentimentMix"
       },
       "SimulatorAddresses": {
         "properties": {

@@ -104,6 +104,9 @@ async function customerSays(sim: Page, persona: string, channel: string, text: s
 
 async function openConversation(agent: Page, customerName: string) {
   await agent.goto("/inbox");
+  // Search like an agent would: with many conversations the newest one is not on page 1
+  // (the inbox shows the longest-waiting first).
+  await agent.getByLabel("Search conversations").fill(customerName);
   const row = agent
     .getByTestId("conversation-list")
     .getByRole("link", { name: new RegExp(customerName) })

@@ -239,7 +239,12 @@ async def test_heartbeat_shows_in_health(client, worker):
     health = (await client.get("/api/health")).json()
     assert health["worker_heartbeat_at"] is not None
     assert health["db"] == "ok" and health["ai_mode"] == "fake"
-    assert health["llm_configured"] is False and health["channels"] == {"simulator": "ok"}
+    assert health["llm_configured"] is False
+    assert health["channels"] == {
+        "simulator": "ok",
+        "gmail": "disabled",
+        "twilio": "not_configured",
+    }
 
 
 async def test_heartbeat_upserts(db, worker):

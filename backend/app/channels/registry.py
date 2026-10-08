@@ -1,7 +1,11 @@
-"""Provider → adapter lookup. Twilio and Gmail register here in Session 5."""
+"""Provider → adapter lookup (ARCHITECTURE §9). Real providers register only when their
+credentials are configured; the simulator is always available."""
 
 from app.channels.base import ChannelAdapter
+from app.channels.gmail import GmailAdapter
 from app.channels.simulator import SimulatorAdapter
+from app.channels.twilio_whatsapp import TwilioWhatsAppAdapter
+from app.config import Settings
 from app.enums import Provider
 
 
@@ -15,9 +19,11 @@ class AdapterRegistry:
         except KeyError:
             raise LookupError(f"No adapter configured for provider {provider!r}") from None
 
-    def providers(self) -> list[Provider]:
-        return list(self._adapters)
 
-
-def build_registry() -> AdapterRegistry:
-    return AdapterRegistry([SimulatorAdapter()])
+def build_registry(settings: Settings) -> AdapterRegistry:
+    adapters: list[ChannelAdapter] = [SimulatorAdapter()]
+    if settings.email_configured:
+        adapters.append(GmailAdapter(settings))
+    if settings.twilio_send_configured:
+        adapters.append(TwilioWhatsAppAdapter(settings))
+    return AdapterRegistry(adapters)

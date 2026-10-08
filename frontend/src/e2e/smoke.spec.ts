@@ -44,6 +44,9 @@ test("simulator message reaches the live inbox and the reply reaches the custome
   await login(agent);
   await expect(agent.getByTestId("live-status")).toHaveAttribute("data-state", "open");
   await expect(agent.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  // Filter to this sender: the list still updates live, and the test does not depend on
+  // how many other conversations wait ahead of a brand-new one.
+  await agent.getByLabel("Search conversations").fill(name);
 
   // The customer writes from the simulator as a new sender.
   await login(customer);

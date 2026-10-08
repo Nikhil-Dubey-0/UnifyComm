@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.intent_map import IntentMap, get_intent_map
 from app.ai.llm import LLMClient
-from app.channels.registry import AdapterRegistry
 from app.compliance.engine import Rule
 from app.config import Settings
 from app.errors import Unauthorized
@@ -21,10 +20,6 @@ _bearer = HTTPBearer(auto_error=False)
 
 def get_settings_dep(request: Request) -> Settings:
     return request.app.state.settings
-
-
-def get_registry(request: Request) -> AdapterRegistry:
-    return request.app.state.registry
 
 
 def get_rules(request: Request) -> list[Rule]:
@@ -44,7 +39,6 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
 
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
-RegistryDep = Annotated[AdapterRegistry, Depends(get_registry)]
 RulesDep = Annotated[list[Rule], Depends(get_rules)]
 LLMDep = Annotated[LLMClient, Depends(get_llm)]
 IntentMapDep = Annotated[IntentMap, Depends(get_intent_map)]

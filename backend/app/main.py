@@ -11,8 +11,18 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.ai.llm import build_llm
-from app.api import auth, compliance, conversations, customers, messages, simulator, system, ws
-from app.channels.registry import build_registry
+from app.api import (
+    auth,
+    compliance,
+    conversations,
+    customers,
+    messages,
+    metrics,
+    simulator,
+    system,
+    webhooks,
+    ws,
+)
 from app.compliance.rules import build_rules
 from app.config import Settings, get_settings, setup_process
 from app.db import asyncpg_dsn, make_engine, make_sessionmaker
@@ -68,7 +78,6 @@ def create_app(settings: Settings | None = None, *, null_pool: bool = False) -> 
     app.state.sessionmaker = make_sessionmaker(engine)
     app.state.hub = hub
     app.state.bridge = bridge
-    app.state.registry = build_registry()
     app.state.rules = build_rules(settings.promo_window_start, settings.promo_window_end)
     app.state.llm = build_llm(settings)
 
@@ -80,7 +89,17 @@ def create_app(settings: Settings | None = None, *, null_pool: bool = False) -> 
         allow_headers=["*"],
     )
     _install_error_handlers(app)
-    for module in (auth, system, simulator, conversations, messages, customers, compliance):
+    for module in (
+        auth,
+        system,
+        simulator,
+        conversations,
+        messages,
+        customers,
+        compliance,
+        metrics,
+        webhooks,
+    ):
         app.include_router(module.router, prefix="/api")
     app.include_router(auth.agents_router, prefix="/api")
     app.include_router(ws.router)

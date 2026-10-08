@@ -200,7 +200,8 @@ export function useHealth() {
   return useQuery({
     queryKey: keys.health,
     queryFn: () => call(api.GET("/api/health")),
-    staleTime: 30_000,
+    // The heartbeat and channel health change without events: poll.
+    refetchInterval: 15_000,
   });
 }
 
@@ -286,5 +287,13 @@ export function useComplianceChecks(filters: ComplianceFilters) {
         }),
       ),
     getNextPageParam: (last) => last.next_cursor ?? null,
+  });
+}
+
+export function useMetrics(days: number) {
+  return useQuery({
+    queryKey: ["metrics", days],
+    queryFn: () => call(api.GET("/api/metrics/summary", { params: { query: { days } } })),
+    refetchInterval: 60_000,
   });
 }

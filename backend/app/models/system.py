@@ -29,6 +29,13 @@ class Job(Base):
                 "kind = 'summarize_conversation' AND status IN ('pending', 'running')"
             ),
         ),
+        # The conversation view reads the latest summary job (§5.2, Session 5 load test).
+        Index(
+            "ix_jobs_summary_conversation",
+            text("((payload->>'conversation_id')::integer)"),
+            "id",
+            postgresql_where=text("kind = 'summarize_conversation'"),
+        ),
         enum_check("kind", JobKind),
         enum_check("status", JobStatus),
     )

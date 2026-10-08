@@ -5,6 +5,7 @@ inserted as `checking`, passes the compliance engine, and only then is queued fo
 worker's `deliver_message` job. A blocked message is a recorded event, not an error.
 """
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -65,6 +66,24 @@ class Route:
     provider: Provider
     to: str
     last_inbound_at: datetime | None
+    # Metadata of the customer's latest inbound message on this channel (email threading).
+    last_inbound_meta: dict[str, Any] | None = None
+
+
+def email_thread_meta(inbound_meta: dict[str, Any] | None) -> dict[str, Any]:
+    """§9.2.1: reply in the customer's email thread (subject, In-Reply-To, References)."""
+    if not inbound_meta:
+        return {}
+    meta: dict[str, Any] = {}
+    subject = str(inbound_meta.get("subject") or "").strip()
+    if subject:
+        meta["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    message_id = inbound_meta.get("message_id")
+    if message_id:
+        meta["in_reply_to"] = message_id
+        references = [r for r in inbound_meta.get("references") or [] if r != message_id]
+        meta["references"] = [*references, message_id]
+    return meta
 
 
 class DeliveryError(Exception):
@@ -257,7 +276,11 @@ async def _submit(
             delivery_status=DeliveryStatus.checking,
             idempotency_key=idempotency_key,
             draft_id=draft.id if draft else None,
-            meta={**(meta or {}), "to": route.to},
+            meta={
+                **(email_thread_meta(route.last_inbound_meta) if channel == Channel.email else {}),
+                **(meta or {}),
+                "to": route.to,
+            },
         )
         .on_conflict_do_nothing(
             index_elements=["idempotency_key"],
@@ -442,6 +465,8 @@ async def retry_delivery(session: AsyncSession, message_id: int) -> int:
         raise Conflict("Only failed deliveries can be retried.", code="not_failed")
     message.delivery_status = DeliveryStatus.queued
     message.delivery_error = None
+    # A late status callback for the failed attempt must not move the new one (§9.2.2).
+    message.external_message_id = None
     job_id = await jobs.enqueue(session, JobKind.deliver_message, {"message_id": message.id})
     await events.emit(
         session,
@@ -473,7 +498,7 @@ async def _route(
     this channel; otherwise the default provider and the customer's contact."""
     last = (
         await session.execute(
-            select(Message.provider, Message.meta["from"].astext, Message.created_at)
+            select(Message.provider, Message.meta["from"].astext, Message.created_at, Message.meta)
             .join(Conversation, Conversation.id == Message.conversation_id)
             .where(
                 Conversation.customer_id == customer_id,
@@ -485,7 +510,12 @@ async def _route(
         )
     ).first()
     if last is not None and last[1]:
-        return Route(provider=Provider(last[0]), to=last[1], last_inbound_at=last[2])
+        return Route(
+            provider=Provider(last[0]),
+            to=last[1],
+            last_inbound_at=last[2],
+            last_inbound_meta=last[3],
+        )
 
     contact = await session.scalar(
         select(CustomerContact)
@@ -530,3 +560,57 @@ async def _context(
         now_local=now.astimezone(ZoneInfo(settings.business_timezone)),
         last_inbound_on_channel_at=route.last_inbound_at,
     )
+
+
+CALLBACK_LOOKUPS = 4
+CALLBACK_LOOKUP_DELAY_SECONDS = 0.5
+
+# Provider callbacks only move a message forward (§9.2.2): they can arrive out of order.
+_STATUS_RANK = {DeliveryStatus.queued: 0, DeliveryStatus.sent: 1, DeliveryStatus.delivered: 2}
+
+
+async def apply_provider_status(
+    session: AsyncSession,
+    *,
+    provider: Provider,
+    external_id: str,
+    status: DeliveryStatus,
+    error: str | None = None,
+) -> bool:
+    """Delivery callback (Twilio status webhook). Owns the unit of work. Returns True if
+    the message changed; unknown IDs and stale updates are ignored.
+
+    A callback can arrive before the worker has committed the provider's ID (it is known
+    only once the provider has answered), so an unknown ID is looked up again briefly."""
+    message = None
+    for attempt in range(CALLBACK_LOOKUPS):
+        message = await session.scalar(
+            select(Message)
+            .where(Message.provider == provider, Message.external_message_id == external_id)
+            .with_for_update()
+        )
+        if message is not None or attempt == CALLBACK_LOOKUPS - 1:
+            break
+        await session.rollback()
+        await asyncio.sleep(CALLBACK_LOOKUP_DELAY_SECONDS)
+    if message is None or message.direction != Direction.outbound:
+        return False
+    current = message.delivery_status
+    if status == DeliveryStatus.failed:
+        changed = current in (DeliveryStatus.queued, DeliveryStatus.sent)
+        if changed:
+            message.delivery_error = error or "Provider reported a failure."
+    else:
+        changed = current in _STATUS_RANK and _STATUS_RANK[status] > _STATUS_RANK[current]
+    if not changed:
+        await session.rollback()
+        return False
+    message.delivery_status = status
+    await events.emit(
+        session,
+        EventType.message_status_changed,
+        conversation_id=message.conversation_id,
+        message_id=message.id,
+    )
+    await session.commit()
+    return True

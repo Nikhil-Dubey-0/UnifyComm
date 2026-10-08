@@ -1,9 +1,18 @@
 "use client";
 
-import { Inbox, LogOut, ShieldCheck, SlidersHorizontal, Smartphone, Users } from "lucide-react";
+import {
+  BarChart3,
+  Inbox,
+  LogOut,
+  ShieldCheck,
+  SlidersHorizontal,
+  Smartphone,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { SystemStatus } from "@/components/system-status";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { clearSession } from "@/lib/auth";
 import { initials } from "@/lib/format";
@@ -15,6 +24,7 @@ const NAV = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/admin/preferences", label: "Channel preferences", icon: SlidersHorizontal },
   { href: "/admin/compliance", label: "Compliance log", icon: ShieldCheck },
+  { href: "/metrics", label: "Metrics", icon: BarChart3 },
   { href: "/simulator", label: "Customer simulator", icon: Smartphone },
 ];
 
@@ -65,6 +75,7 @@ export function NavRail({ agentName }: { agentName: string }) {
       })}
 
       <div className="mt-auto flex flex-col items-center gap-3">
+        <SystemStatus />
         <Tooltip>
           <TooltipTrigger asChild>
             <span

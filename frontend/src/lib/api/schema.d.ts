@@ -345,6 +345,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Metrics Summary */
+        get: operations["metrics_summary_api_metrics_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/twilio/whatsapp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Whatsapp Inbound */
+        post: operations["whatsapp_inbound_api_webhooks_twilio_whatsapp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/twilio/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Message Status */
+        post: operations["message_status_api_webhooks_twilio_status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents": {
         parameters: {
             query?: never;
@@ -428,6 +479,15 @@ export interface components {
          * @enum {string}
          */
         AiTask: "intent" | "sentiment";
+        /** CategoryCount */
+        CategoryCount: {
+            /** Category */
+            category: string | null;
+            /** Queue */
+            queue: string;
+            /** Count */
+            count: number;
+        };
         /**
          * Channel
          * @enum {string}
@@ -488,6 +548,15 @@ export interface components {
             evaluated_at: string;
             message: components["schemas"]["CheckedMessage"];
             customer: components["schemas"]["CheckedCustomer"];
+        };
+        /** ComplianceMetrics */
+        ComplianceMetrics: {
+            /** Checked Messages */
+            checked_messages: number;
+            /** Blocked Messages */
+            blocked_messages: number;
+            /** Blocks By Rule */
+            blocks_by_rule: components["schemas"]["RuleCount"][];
         };
         /** ComplianceOut */
         ComplianceOut: {
@@ -719,6 +788,18 @@ export interface components {
             /** Contacts */
             contacts: components["schemas"]["ContactRef"][];
         };
+        /** DailyCount */
+        DailyCount: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Inbound */
+            inbound: number;
+            /** Outbound */
+            outbound: number;
+        };
         /**
          * DeliveryStatus
          * @enum {string}
@@ -755,6 +836,29 @@ export interface components {
          * @enum {string}
          */
         DraftOutcome: "pending" | "sent_as_is" | "edited" | "discarded";
+        /** DraftOutcomes */
+        DraftOutcomes: {
+            /**
+             * Sent As Is
+             * @default 0
+             */
+            sent_as_is: number;
+            /**
+             * Edited
+             * @default 0
+             */
+            edited: number;
+            /**
+             * Discarded
+             * @default 0
+             */
+            discarded: number;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending: number;
+        };
         /** DraftRequestIn */
         DraftRequestIn: {
             /** Instructions */
@@ -771,6 +875,15 @@ export interface components {
         /** ErrorResponse */
         ErrorResponse: {
             error: components["schemas"]["ErrorDetail"];
+        };
+        /** FirstResponse */
+        FirstResponse: {
+            /** Count */
+            count: number;
+            /** Median Seconds */
+            median_seconds: number | null;
+            /** P90 Seconds */
+            p90_seconds: number | null;
         };
         /** HealthOut */
         HealthOut: {
@@ -803,12 +916,32 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "pending" | "running" | "done" | "failed";
+        /** LabelCount */
+        LabelCount: {
+            /** Label */
+            label: string;
+            /** Count */
+            count: number;
+        };
         /** LabelScore */
         LabelScore: {
             /** Label */
             label: string;
             /** Confidence */
             confidence: number;
+        };
+        /** LatencyMetrics */
+        LatencyMetrics: {
+            /** Task */
+            task: string;
+            /** Model Name */
+            model_name: string;
+            /** Count */
+            count: number;
+            /** Median Ms */
+            median_ms: number | null;
+            /** P90 Ms */
+            p90_ms: number | null;
         };
         /** LinkRequest */
         LinkRequest: {
@@ -920,6 +1053,40 @@ export interface components {
             /** Compliance Checks */
             compliance_checks: components["schemas"]["ComplianceCheckOut"][];
         };
+        /** MetricsSummary */
+        MetricsSummary: {
+            /** Days */
+            days: number;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Conversations */
+            conversations: number;
+            /** Inbound By Channel */
+            inbound_by_channel: {
+                [key: string]: number;
+            };
+            /** Outbound By Status */
+            outbound_by_status: {
+                [key: string]: number;
+            };
+            /** Daily */
+            daily: components["schemas"]["DailyCount"][];
+            first_response: components["schemas"]["FirstResponse"];
+            drafts: components["schemas"]["DraftOutcomes"];
+            /** Categories */
+            categories: components["schemas"]["CategoryCount"][];
+            /** Top Intents */
+            top_intents: components["schemas"]["LabelCount"][];
+            /** Needs Review */
+            needs_review: number;
+            sentiment: components["schemas"]["SentimentMix"];
+            compliance: components["schemas"]["ComplianceMetrics"];
+            /** Ai Latency */
+            ai_latency: components["schemas"]["LatencyMetrics"][];
+        };
         /** OutreachRequest */
         OutreachRequest: {
             channel: components["schemas"]["Channel"];
@@ -983,6 +1150,13 @@ export interface components {
          * @enum {string}
          */
         Purpose: "service_reply" | "proactive";
+        /** RuleCount */
+        RuleCount: {
+            /** Rule Id */
+            rule_id: string;
+            /** Count */
+            count: number;
+        };
         /** SendRequest */
         SendRequest: {
             channel: components["schemas"]["Channel"];
@@ -1001,6 +1175,24 @@ export interface components {
          * @enum {string}
          */
         SenderType: "customer" | "agent" | "system";
+        /** SentimentMix */
+        SentimentMix: {
+            /**
+             * Negative
+             * @default 0
+             */
+            negative: number;
+            /**
+             * Neutral
+             * @default 0
+             */
+            neutral: number;
+            /**
+             * Positive
+             * @default 0
+             */
+            positive: number;
+        };
         /** SimulatorAddresses */
         SimulatorAddresses: {
             /** Whatsapp */
@@ -2494,6 +2686,201 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Page_ComplianceLogItem_"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    metrics_summary_api_metrics_summary_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsSummary"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    whatsapp_inbound_api_webhooks_twilio_whatsapp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Empty TwiML */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/xml": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    message_status_api_webhooks_twilio_status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

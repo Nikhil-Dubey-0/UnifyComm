@@ -137,7 +137,7 @@ UnifyComm/
 │   │   ├── enums.py  errors.py  log.py   # shared enums, domain exceptions, logging
 │   │   ├── models/                  # SQLAlchemy ORM, one file per aggregate
 │   │   ├── schemas/                 # Pydantic request/response models
-│   │   ├── api/                     # routers only: parse, call service, return
+│   │   ├── api/                     # routers only: parse, call service, return (incl. webhooks.py, metrics.py)
 │   │   ├── services/                # ingest, identity, conversations, routing, outbound,
 │   │   │                            # analysis, inbox, customers, simulator, auth, system,
 │   │   │                            # drafts, summaries, ai_context, acknowledgement,
@@ -310,6 +310,7 @@ jobs, audit_log, system_status: standalone
 | created_at, updated_at | timestamptz not null | |
 | | | Partial index `(run_after, id) WHERE status = 'pending'` |
 | | | **Partial UNIQUE `((payload->>'conversation_id')) WHERE kind = 'summarize_conversation' AND status IN ('pending','running')`**: at most one queued summary per conversation; enqueue uses `ON CONFLICT DO NOTHING` |
+| | | Partial index `((payload->>'conversation_id')::integer), id WHERE kind = 'summarize_conversation'`: the conversation view reads the latest summary job (found by the Session 5 load test; it was a sequential scan on a table that grows with every message) |
 
 **conversation_summaries**
 | Column | Type | Notes |
@@ -631,6 +632,23 @@ Inbound parsing is provider-specific (webhook form, simulator JSON, IMAP message
 
 Twilio sandbox facts: each recipient must send `join <code>`, the sandbox session lasts 3 days, and business-initiated messages outside 24 h need approved templates. Free ngrok URLs change on restart, so update `PUBLIC_BASE_URL` and the Twilio console together.
 
+#### 9.2.1 Gmail (`channels/gmail.py`, `worker/email_poller.py`)
+- **Inbound.** The worker polls every `EMAIL_POLL_SECONDS` when `EMAIL_ADDRESS` and `EMAIL_APP_PASSWORD` are set. IMAP over TLS on 993, `SELECT INBOX`, then `SEARCH UNSEEN FROM <sender>` for each address in `EMAIL_ALLOWED_SENDERS` (`*` searches all `UNSEEN`; empty ingests nothing). It fetches with `BODY.PEEK[]`, so nothing is marked read until ingest has committed, then sets `\Seen`. Mail that arrived before the worker's start day (UTC) is ignored, so old unread mail is never acknowledged. Ingest is idempotent on `(gmail, Message-ID)`, so a crash between the two steps only produces a duplicate that is ignored. A message without a `Message-ID` gets `gmail-<uidvalidity>-<uid>`.
+- **Allowlist (safety).** The inbox is a real personal mailbox and every new conversation is acknowledged automatically, so only allowlisted senders are ingested. Also skipped and left unread: mail from `EMAIL_ADDRESS` itself, and automatic mail (`Auto-Submitted` other than `no`, `Precedence: bulk|list|junk`, `List-Id`), following RFC 3834.
+- **Parsing.** stdlib `email` with `policy.default`. The body is the `text/plain` part, else the `text/html` part converted to text, capped at 50,000 characters. `metadata` keeps `subject`, `message_id`, `in_reply_to`, `references` and `sender_name`. Quote and signature stripping happen only in `text_prep` for the models (§6.2); the stored body is as received.
+- **Outbound.** SMTP with STARTTLS on `SMTP_PORT` (587). The `Message-ID` is `<unifycomm.{message_id}@domain>`, stable across resends. Certificates are always verified, for IMAP and SMTP alike; the code never disables verification. On the dev laptop Avast Mail Shield re-signs mail TLS: 587 STARTTLS gets Avast's trusted root and verifies, while 465 and IMAP 993 get "Avast Web/Mail Shield Untrusted Root" and fail. Inbound email therefore needs Mail Shield's SSL scanning turned off (a user setting in Avast). Note that stdlib `imaplib` and `smtplib` do not verify certificates unless given `ssl.create_default_context()`, so always pass one. `From: EMAIL_FROM_NAME <EMAIL_ADDRESS>`. The adapter creates the `Message-ID` and returns it as the external ID. `SMTPRecipientsRefused`, `SMTPAuthenticationError` and 5xx replies fail without retry; 4xx replies and errors before the message is handed over (connect, TLS, login) are retried. A timeout or disconnect while the message is being sent is ambiguous (the server may have accepted it): the message becomes `failed` with "check before retrying" instead of being resent automatically.
+- **Threading.** For every email outbound (any provider), `services/outbound.py` copies threading data from the latest inbound email of the conversation's customer into the message metadata: `subject` = `Re: <subject>` (not doubled), `in_reply_to` = its `Message-ID`, `references` = its references plus that ID. The template keeps its own subject.
+- **Health.** Each poll writes `system_status` `channel.gmail` = `{status: ok|error, at, error}` where `error` is the exception type only. `/health` reports gmail as `disabled` (not configured), `starting` (configured, no report yet), `ok`, `error`, or `stale` (no report for 3 poll intervals, at least 60 s: the worker or the poller is down).
+- **Robustness.** A message that cannot be parsed (for example an unknown charset) is marked read and logged so it cannot block later mail; bodies with a bad charset are decoded as UTF-8 with replacement characters. UIDs left unread on purpose are remembered for the worker's lifetime and not downloaded again. The poll loop survives database and network errors.
+
+#### 9.2.2 Twilio WhatsApp (`channels/twilio_whatsapp.py`, `api/webhooks.py`)
+- No Twilio SDK: signature validation is HMAC-SHA1 and sending is one REST call with `httpx`.
+- **Signature.** `X-Twilio-Signature` = base64(HMAC-SHA1(`TWILIO_AUTH_TOKEN`, url + concatenated `key+value` of the POST parameters sorted by key)), compared in constant time. `url` = `PUBLIC_BASE_URL` + request path + query string, never built from proxy headers. A missing or wrong signature, or an empty auth token, returns `403 invalid_signature`.
+- **Inbound** `POST /api/webhooks/twilio/whatsapp`: `From` (`whatsapp:+91…`) is the sender, `ProfileName` the sender name, `MessageSid` the external ID, `Body` the text. A media-only message is stored as `[Attachment not supported]` with `NumMedia` in metadata. Returns `200` with an empty `<Response/>` (`text/xml`); duplicates are ignored by ingest.
+- **Outbound.** `POST https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json` with basic auth, `From=TWILIO_WHATSAPP_FROM`, `To=whatsapp:<E.164>`, `Body`, and `StatusCallback=PUBLIC_BASE_URL/api/webhooks/twilio/status` when `PUBLIC_BASE_URL` is set. A 2xx reply makes the message `sent` with the returned `sid`. 429, 5xx and connection errors (the request never arrived) are retried. A read timeout or a broken connection after the request was sent is ambiguous (Twilio's Messages API has no idempotency key), so the message becomes `failed` with "check before retrying" rather than being sent twice. Other 4xx fail without retry, with `Twilio <code>: <message>` as `delivery_error` (for example 63016 outside the 24 h window).
+- **Status** `POST /api/webhooks/twilio/status`: finds the message by `(twilio, MessageSid)`, looking again for up to 1.5 s because a callback can arrive before the worker has committed the SID; unknown SIDs then return `200`. `sent` → `sent`, `delivered` and `read` → `delivered`, `failed` and `undelivered` → `failed` with `Twilio <ErrorCode>`. Updates only move forward (`queued` < `sent` < `delivered`; `failed` never replaces `delivered`), because callbacks can arrive out of order. NOTIFYs `message.status_changed`.
+- **Health.** `/health` reports `twilio` as `configured` (SID, token and `PUBLIC_BASE_URL` set), `no_public_url` (credentials but no tunnel URL: sending works, webhooks cannot arrive) or `not_configured`.
+
 ### 9.3 Outbound provider selection
 The provider is the one that carried the customer's most recent inbound message on that channel. With no inbound on that channel (proactive), use `DEFAULT_PROVIDER_<CHANNEL>` (default `simulator`). A reply never jumps from a simulated thread to a real phone, or the reverse.
 
@@ -658,7 +676,7 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | POST | `/conversations/{id}/drafts` | `{instructions?, channel?}` | `201 Draft {id, conversation_id, based_on_message_id, body, verify_hints, model, outcome, created_at}`, `409 no_customer_message` or `503 llm_unavailable` |
 | POST | `/conversations/{id}/send` | header `Idempotency-Key`; `{channel, body, draft_id?}` | `201 {message, compliance: {allowed, results[]}}` |
 | POST | `/messages/{id}/analyze` | | `202 {job_id}` |
-| POST | `/messages/{id}/retry` | | `202` (failed deliveries only) |
+| POST | `/messages/{id}/retry` | | `202` (failed deliveries only). Clears the provider's external ID so a late callback for the first attempt cannot change the new one |
 | GET | `/customers` | `?q=&cursor=&limit=` | list of customers with `contacts` and `preferences` (the preferences admin page reads it) |
 | GET | `/customers/{id}` | | `{customer, contacts, preferences, conversations}` |
 | POST | `/customers/{id}/link` | `{source_customer_id}` | `Customer` |
@@ -666,7 +684,7 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | POST | `/customers/{id}/outreach` | header `Idempotency-Key`; `{channel, body}` | same as send. Joins the customer's active conversation (§7.2) or starts one with status `pending` |
 | GET | `/compliance/checks` | `?passed=&rule_id=&cursor=&limit=` | newest first: `{id, rule_id, passed, reason, context, evaluated_at, message: {id, conversation_id, channel, purpose, sender_type, delivery_status, is_template}, customer: {id, display_name}}` |
 | GET | `/compliance/rules` | | `[{rule_id, description}]` |
-| GET | `/metrics/summary` | `?days=` | §15 metrics (Session 5) |
+| GET | `/metrics/summary` | `?days=` (1–90, default 7) | `{days, since, conversations, inbound_by_channel, outbound_by_status, daily[{date, inbound, outbound}], first_response{count, median_seconds, p90_seconds}, drafts{sent_as_is, edited, discarded, pending}, categories[{category, queue, count}], top_intents[{label, count}], needs_review, sentiment{negative, neutral, positive}, compliance{checked_messages, blocked_messages, blocks_by_rule[{rule_id, count}]}, ai_latency[{task, model_name, count, median_ms, p90_ms}]}`. Window: rows created since `now - days`; days are IST dates (§15) |
 
 `scripts/export_openapi.py` writes `frontend/openapi.json`. The frontend generates `src/lib/api/schema.d.ts` from it with `openapi-typescript`.
 
@@ -749,9 +767,12 @@ The worker polls every 500 ms when idle. Handlers must be idempotent because a r
 | `BUSINESS_TIMEZONE` | `Asia/Kolkata` | |
 | `PROMO_WINDOW_START` / `PROMO_WINDOW_END` | `09:00` / `21:00` | |
 | `DEFAULT_PROVIDER_WHATSAPP/SMS/EMAIL` | `simulator` | §9.3 |
-| `PUBLIC_BASE_URL` | empty | tunnel URL, for Twilio signatures |
+| `PUBLIC_BASE_URL` | empty | tunnel URL (no trailing slash), for Twilio signatures and the status callback |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_FROM` | empty / empty / `whatsapp:+14155238886` | |
-| `EMAIL_ADDRESS` / `EMAIL_APP_PASSWORD` / `IMAP_HOST` / `SMTP_HOST` / `EMAIL_POLL_SECONDS` | empty / empty / `imap.gmail.com` / `smtp.gmail.com` / `20` | Gmail needs 2-Step Verification and an app password |
+| `EMAIL_ADDRESS` / `EMAIL_APP_PASSWORD` / `IMAP_HOST` / `SMTP_HOST` / `SMTP_PORT` / `EMAIL_POLL_SECONDS` | empty / empty / `imap.gmail.com` / `smtp.gmail.com` / `587` / `20` | Gmail needs 2-Step Verification and an app password (16 letters; spaces are ignored) |
+| `EMAIL_ALLOWED_SENDERS` | empty | comma-separated addresses the poller may ingest; `*` = everyone; empty = nobody (§9.2.1) |
+| `EMAIL_FROM_NAME` | `UnifyComm Support` | display name on outgoing email |
+| `TEST_CONTACT_NAME` / `TEST_CONTACT_PHONE` / `TEST_CONTACT_EMAIL` | empty | the user's own phone and email; `scripts/seed.py` creates them as one verified customer, opted in on WhatsApp and email (§17) |
 | `LOG_LEVEL` | `INFO` | api and worker logging |
 
 The frontend uses `frontend/.env.local` with `NEXT_PUBLIC_API_URL=http://localhost:8000` and `NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws`.
@@ -775,11 +796,15 @@ Performance targets (dev laptop): ingest p95 < 150 ms; AI labels visible < 2 s a
 
 Measured in Session 3 (real models, api + worker + `next dev` running, `scripts/check_real_models.py`): labels visible 0.70–0.78 s after a simulator message (median 0.73 s, including the worker's 500 ms idle poll); model latency intent median 50 ms, sentiment median 113 ms; worker working set 683 MB. Worker startup in real mode takes 30–40 s before the first labels (mostly `import transformers` under load); it happens in the background (§3).
 
+Measured in Session 5 (`scripts/load_test_data.py`, real models, 215 conversations / 372 inbound messages): ingest 19–28 ms per message; read endpoints p50/p95 in ms: inbox 27/34, inbox search 26/31, conversation detail 31/36, compliance log 16/21, metrics 7 days 47/58, metrics 90 days 58/67. The worker drained 802 jobs (analysis, acknowledgements, deliveries) in 56 s.
+
 Measured in Session 4 (`gpt-6-luna`, `scripts/check_llm.py` and the demo spec): drafts 4.2–7.7 s, summaries 3.5 s, about 550 input and 170–280 output tokens per draft. After a worker restart in real mode, a message that arrived while it was down got its labels and acknowledgement after 35 s.
 
 Memory budget (7.3 GB RAM): PostgreSQL ~0.2 GB, api ~0.2 GB, worker ~1 GB (real mode), Next dev ~1 GB, browser and editor the rest. Never run model training at the same time as the app. Use `next build && next start` for the demo.
 
-Security: `.env` is never committed. Twilio signatures are validated. CORS is limited to the frontend origin. PII is redacted before LLM calls. OpenAI requests use `store=False`. Secrets and message bodies are not logged above DEBUG. Passwords use Argon2.
+Security: `.env` is never committed. Twilio signatures are validated. The email poller ingests only allowlisted senders and never acknowledges automatic mail.
+
+Security review (Session 5, by hand: the `security-review` skill needs a git remote). Checked: webhook signatures (verified before any work, constant-time compare, `403` without a token or tunnel URL), no secrets in logs, prints, `/health` or error messages, no HTML injection in the UI (React escapes all customer text; email HTML is converted to plain text), certificates verified on every mail and API connection. Fixed: email header values from customers (subject, IDs, names) are flattened to one line, because an encoded line break made every email reply in that conversation fail. Accepted residual risks: the email allowlist trusts the `From` header (no DKIM/SPF check), so a forged allowlisted sender is ingested, but the acknowledgement then only goes to that allowlisted address; `/health` is unauthenticated and shows configuration states (no secrets or addresses). CORS is limited to the frontend origin. PII is redacted before LLM calls. OpenAI requests use `store=False`. Secrets and message bodies are not logged above DEBUG. Passwords use Argon2.
 
 ---
 
@@ -854,14 +879,14 @@ Metrics for the report (Session 5, `/metrics/summary`): first-response time, dra
 - **Exit:** demo script passes end-to-end on the simulator. With `OPENAI_API_KEY` empty, the UI shows "AI unavailable" and manual send works.
 
 ### Session 5: Real channels, metrics, hardening
-- [ ] Gmail: IMAP poller in the worker, SMTP send with threading headers, email cleanup tests. Needs a Gmail account with 2-Step Verification and an app password.
-- [ ] Twilio WhatsApp: webhook, signature validation, outbound, status callbacks, tunnel (ngrok or cloudflared) and sandbox join instructions.
-- [ ] Channel health on `/health` and in the UI.
-- [ ] Metrics page.
-- [ ] Load a few hundred generated messages; add indexes where queries are slow.
-- [ ] `README.md` (setup, run, demo, credits and licences). Optional `docker-compose.yml` for machines with Docker.
-- [ ] Run the `code-review` and `security-review` skills and fix findings. Rehearse the demo twice.
-- **Exit:** a real WhatsApp message and a real follow-up email from the same person land in one conversation; all tests green; the demo script runs twice in a row without touching code.
+- [x] Gmail: IMAP poller in the worker, SMTP send with threading headers, email cleanup tests. Needs a Gmail account with 2-Step Verification and an app password. (Built and tested with a fake mailbox and SMTP, §9.2.1. Live check pending: the app password in `.env` is rejected by Gmail, and Avast blocks IMAP 993 until its Mail Shield SSL scanning is off.)
+- [x] Twilio WhatsApp: webhook, signature validation, outbound, status callbacks, tunnel (ngrok or cloudflared) and sandbox join instructions. (Built and tested, signature checked against Twilio's documented example, §9.2.2; cloudflared 2026.10.0 installed; instructions in README. The Twilio API accepts the account's credentials. Live check pending: tunnel URL and sandbox webhook.)
+- [x] Channel health on `/health` and in the UI (nav-rail status: worker, AI assistant, simulator, Gmail incl. `stale`, Twilio).
+- [x] Metrics page (`GET /metrics/summary`, `/metrics`; charts per the dataviz method, palette validated).
+- [x] Load a few hundred generated messages; add indexes where queries are slow. (`scripts/load_test_data.py`: 372 messages, 215 conversations; every read endpoint p95 < 70 ms. One growing sequential scan found and indexed: `ix_jobs_summary_conversation`.)
+- [x] `README.md` (setup, run, demo, credits and licences). Optional `docker-compose.yml` for machines with Docker. (README done; the optional docker-compose was not made, D17: native only.)
+- [x] Run the `code-review` and `security-review` skills and fix findings. Rehearse the demo twice. (code-review: 10 findings, all fixed with tests first. security-review: the skill needs a git remote, so it was done by hand, §14; one finding fixed. Demo spec passed twice in a row with 215 extra conversations loaded.)
+- **Exit:** a real WhatsApp message and a real follow-up email from the same person land in one conversation; all tests green; the demo script runs twice in a row without touching code. (Demo twice: done. Same person across channels: proven in `test_channels.py` with faked providers; the live run is still open.)
 
 Carry-over rule: unfinished items move to the top of the next session. A session never starts new work while tests are failing.
 
@@ -877,6 +902,7 @@ Seed data:
 | Priya Verma (verified) | phone +91 91234 56780 | WhatsApp: `opted_out`; SMS: `opted_in` |
 | Amit Rao (verified) | phone +91 99887 76655 | SMS: `opted_in`, DND **on** |
 | Agents | `agent@unifycomm.local`, `admin@unifycomm.local` | password from `SEED_AGENT_PASSWORD` (default `demo1234`) |
+| Test contact (optional, real channels) | `TEST_CONTACT_PHONE`, `TEST_CONTACT_EMAIL` from `.env` | WhatsApp and email `opted_in`, DND off. Lets a real WhatsApp message and a real email from the user land in one conversation (Session 5 exit). |
 
 Run on a split screen: simulator on the left, agent workspace on the right.
 

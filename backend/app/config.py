@@ -64,13 +64,43 @@ class Settings(BaseSettings):
     email_app_password: SecretStr = SecretStr("")
     imap_host: str = "imap.gmail.com"
     smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
     email_poll_seconds: int = 20
+    email_allowed_senders: str = ""
+    email_from_name: str = "UnifyComm Support"
+
+    test_contact_name: str = ""
+    test_contact_phone: str = ""
+    test_contact_email: str = ""
 
     log_level: str = "INFO"
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.email_address and self.email_app_password.get_secret_value())
+
+    @property
+    def email_password(self) -> str:
+        """Gmail shows app passwords in groups of four; the spaces are not part of it."""
+        return self.email_app_password.get_secret_value().replace(" ", "")
+
+    @property
+    def allowed_email_senders(self) -> list[str]:
+        """Lowercased allowlist; ["*"] means everyone, [] means nobody (§9.2.1)."""
+        return [a.strip().lower() for a in self.email_allowed_senders.split(",") if a.strip()]
+
+    @property
+    def twilio_send_configured(self) -> bool:
+        return bool(self.twilio_account_sid and self.twilio_auth_token.get_secret_value())
+
+    @property
+    def twilio_configured(self) -> bool:
+        """Sending and receiving: webhooks also need the public tunnel URL."""
+        return self.twilio_send_configured and bool(self.public_base_url)
 
     @property
     def llm_configured(self) -> bool:

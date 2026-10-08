@@ -22,6 +22,7 @@ export type CustomerWithContacts = Schemas["CustomerWithContacts"];
 export type DeliveryStatus = Schemas["DeliveryStatus"];
 export type Draft = Schemas["DraftOut"];
 export type Message = Schemas["MessageWithAnalysis"];
+export type Metrics = Schemas["MetricsSummary"];
 export type Preference = Schemas["PreferenceOut"];
 export type Priority = Schemas["Priority"];
 export type SendResponse = Schemas["SendResponse"];

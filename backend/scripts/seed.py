@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings, setup_process
+from app.config import Settings, get_settings, setup_process
 from app.db import make_engine, make_sessionmaker
 from app.enums import AgentRole, Channel, Consent, ContactKind
 from app.models import Agent, Base, ChannelPreference, Customer, CustomerContact
@@ -54,7 +54,25 @@ async def reset(session: AsyncSession) -> None:
     await session.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
 
 
-async def seed(session: AsyncSession, agent_password: str) -> None:
+def test_contact(settings: Settings) -> tuple | None:
+    """The user's own phone and email (TEST_CONTACT_* in .env) as one verified customer, so
+    a real WhatsApp message and a real email from them meet in one conversation (§17)."""
+    contacts = []
+    if settings.test_contact_phone.strip():
+        contacts.append((ContactKind.phone, settings.test_contact_phone.strip()))
+    if settings.test_contact_email.strip():
+        contacts.append((ContactKind.email, settings.test_contact_email.strip()))
+    if not contacts:
+        return None
+    opted_in = (Consent.opted_in, False)
+    return (
+        settings.test_contact_name.strip() or "Test Contact",
+        contacts,
+        {Channel.whatsapp: opted_in, Channel.sms: opted_in, Channel.email: opted_in},
+    )
+
+
+async def seed(session: AsyncSession, agent_password: str, extra: list[tuple] = ()) -> None:
     for email, name, role in AGENTS:
         password_hash = hash_password(agent_password)
         await session.execute(
@@ -66,7 +84,8 @@ async def seed(session: AsyncSession, agent_password: str) -> None:
             )
         )
 
-    for name, contacts, prefs in CUSTOMERS:
+    for index, (name, contacts, prefs) in enumerate([*CUSTOMERS, *extra]):
+        move_contacts = index >= len(CUSTOMERS)
         normalized = [(kind, identity.normalize(kind, raw)) for kind, raw in contacts]
         first_kind, first_value = normalized[0]
         existing = await session.scalar(
@@ -86,11 +105,19 @@ async def seed(session: AsyncSession, agent_password: str) -> None:
             customer.display_name, customer.verified = name, True
 
         for kind, value in normalized:
-            await session.execute(
-                insert(CustomerContact)
-                .values(customer_id=customer_id, kind=kind, value_normalized=value, verified=True)
-                .on_conflict_do_nothing(index_elements=["kind", "value_normalized"])
+            stmt = insert(CustomerContact).values(
+                customer_id=customer_id, kind=kind, value_normalized=value, verified=True
             )
+            if move_contacts:
+                # The user may have written in before seeding: claim the address so phone
+                # and email belong to one customer (§17 test contact).
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["kind", "value_normalized"],
+                    set_={"customer_id": customer_id, "verified": True},
+                )
+            else:
+                stmt = stmt.on_conflict_do_nothing(index_elements=["kind", "value_normalized"])
+            await session.execute(stmt)
         for channel, (consent, dnd) in prefs.items():
             await session.execute(
                 insert(ChannelPreference)
@@ -112,7 +139,12 @@ async def main(do_reset: bool) -> None:
             if do_reset:
                 await reset(session)
                 log.info("all tables truncated")
-            await seed(session, settings.seed_agent_password.get_secret_value())
+            contact = test_contact(settings)
+            await seed(
+                session,
+                settings.seed_agent_password.get_secret_value(),
+                [contact] if contact else [],
+            )
             await session.commit()
     finally:
         await engine.dispose()

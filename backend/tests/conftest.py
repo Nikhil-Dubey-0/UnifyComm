@@ -18,6 +18,16 @@ def settings() -> Settings:
             "jwt_secret": SecretStr("test-secret-" + "x" * 32),
             "llm_enabled": False,
             "openai_api_key": SecretStr(""),
+            # Tests never reach real channels, whatever .env holds.
+            "email_address": "",
+            "email_app_password": SecretStr(""),
+            "email_allowed_senders": "",
+            "twilio_account_sid": "",
+            "twilio_auth_token": SecretStr(""),
+            "public_base_url": "",
+            "test_contact_name": "",
+            "test_contact_phone": "",
+            "test_contact_email": "",
         }
     )
 
