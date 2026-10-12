@@ -82,7 +82,17 @@ npm install
 
 ## Run
 
-Three terminals:
+**One command** (from the repository root, in PowerShell):
+
+```powershell
+.\start.ps1             # tunnel + api + worker + web, each in its own window
+.\start.ps1 -NoTunnel   # without the tunnel (simulator and email only)
+.\stop.ps1              # stop everything
+```
+
+`start.ps1` writes the new tunnel address into `.env` (`PUBLIC_BASE_URL`) and copies the Twilio webhook URL to the clipboard; paste it into the Sandbox settings (see Real channels). It refuses to start while ports 8000 or 3000 are in use, so run `.\stop.ps1` first if anything is left over.
+
+Or by hand, in three terminals:
 
 ```powershell
 cd backend; uv run uvicorn app.main:app --port 8000      # api
@@ -130,9 +140,10 @@ cd backend; uv run python -m scripts.check_channels
 ### WhatsApp (Twilio sandbox)
 
 1. In the Twilio console copy the **Account SID** and **Auth Token** into `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
-2. Open **Messaging → Try it out → Send a WhatsApp message**. From your phone, send the `join <code>` text shown there to +1 415 523 8886. The join lasts 3 days.
-3. Start a tunnel to the api: `cloudflared tunnel --url http://localhost:8000` (install with `winget install Cloudflare.cloudflared`). It prints an `https://….trycloudflare.com` address.
-4. Put that address in `PUBLIC_BASE_URL` (no trailing slash) and restart the api. Webhook signatures are checked against it.
+2. Open **Messaging → Try it out → Send a WhatsApp message** (or https://console.twilio.com/us1/develop/sms/settings/whatsapp-sandbox). From your phone, send the two-word `join <code>` text shown there to **+1 415 523 8886**. The join lasts 3 days.
+   - **Not** the "WhatsApp Tryout" number that answers `join twilio-trial` ("Standard auto-reply… Tryout UI"). That trial sender rejects free-text messages through the API (Twilio 21654, ContentSid Required), so agent replies cannot be delivered from it.
+3. Start everything with `.\start.ps1`. It starts a cloudflared tunnel (install it with `winget install --id Cloudflare.cloudflared --source winget`), writes the `https://….trycloudflare.com` address into `PUBLIC_BASE_URL`, and copies the webhook URL to the clipboard. Webhook signatures are checked against `PUBLIC_BASE_URL`.
+4. (By hand instead: `cloudflared tunnel --url http://localhost:8000`, put the address in `PUBLIC_BASE_URL` without a trailing slash, then start the api.)
 5. In the sandbox settings set **When a message comes in** to `https://….trycloudflare.com/api/webhooks/twilio/whatsapp` (method POST). Delivery receipts use `/api/webhooks/twilio/status` automatically.
 
 The tunnel address changes every time cloudflared starts: repeat steps 4 and 5. The sandbox only reaches phones that joined. Outside 24 h after the customer's last message WhatsApp needs approved templates, so the app blocks those replies itself (`whatsapp.session_window`).

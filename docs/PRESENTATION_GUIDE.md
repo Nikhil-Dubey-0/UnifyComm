@@ -146,12 +146,12 @@ Every check is **stored**, including blocked messages, and the **Compliance log*
 
 ## 6. Checklist before the evaluation
 
-1. `cd backend; uv run python -m scripts.seed --reset` (clean demo data; keeps the demo customers).
-2. Start the **api**, **worker** and web app. For presenting, use `npm run build; npm start` in `frontend/`: it is faster than `npm run dev`.
+1. `cd backend; uv run python -m scripts.seed --reset` (clean demo data; keeps the demo customers and our test contact).
+2. From the repository root run `.\start.ps1`. It opens the api, worker and web windows, starts the tunnel, updates `.env`, and copies the Twilio webhook URL to the clipboard: paste it into the WhatsApp Sandbox settings. (`.\stop.ps1` stops everything.)
 3. Wait about 40 s after starting the worker, so the models are loaded. The activity icon in the left bar should show the worker as running.
 4. Check the OpenAI key works: click Draft reply once on a test conversation.
 5. Optional: `cd frontend; npx playwright test src/e2e/demo.spec.ts` runs the whole demo automatically (about 45 s). If it passes, the live demo will work.
-6. For real channels: run `uv run python -m scripts.check_channels`, start `cloudflared`, set the webhook in Twilio (README → Real channels), and send `join <code>` from the phone that day (the sandbox lasts 72 h).
+6. For real channels: run `uv run python -m scripts.check_channels` (all ok, tunnel HTTP 200), and send the two-word `join <code>` to **+1 415 523 8886** from the phone that day (the sandbox lasts 72 h).
 7. Close other heavy programs: the laptop has 7.3 GB of RAM.
 
 ---
