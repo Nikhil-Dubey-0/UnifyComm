@@ -134,7 +134,7 @@ async def test_no_status_callback_without_public_url(settings):
             400,
             {"code": 63016, "message": "Outside the allowed window."},
             False,
-            "Twilio 63016: Outside the allowed window.",
+            "Twilio 63016: more than 24-hour",
         ),
         (401, {"code": 20003, "message": "Authenticate"}, False, "Twilio 20003: Authenticate"),
         (429, {"code": 20429, "message": "Too Many Requests"}, True, "Twilio 20429: Too Many"),
@@ -179,3 +179,20 @@ async def test_only_errors_before_the_request_arrived_are_retried(settings, erro
 
     result = await adapter(settings, handler).send(OUT)
     assert not result.ok and result.retryable is retryable
+
+
+@pytest.mark.parametrize(
+    "code,hint",
+    [
+        (21654, "templates only"),
+        (63016, "24-hour"),
+        (63015, "joined the sandbox"),
+    ],
+)
+async def test_known_twilio_errors_are_explained(settings, code, hint):
+    def handler(request):
+        return httpx.Response(400, json={"code": code, "message": "raw message"})
+
+    result = await adapter(settings, handler).send(OUT)
+    assert result.error.startswith(f"Twilio {code}: ")
+    assert hint in result.error

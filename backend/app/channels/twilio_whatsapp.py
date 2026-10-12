@@ -128,6 +128,17 @@ class TwilioWhatsAppAdapter:
         return SendResult(ok=False, error=error, retryable=retryable)
 
 
+# Plain-language reasons for Twilio errors agents are likely to see.
+KNOWN_ERRORS: dict[int, str] = {
+    21654: (
+        "this Twilio sender accepts approved templates only; free-text WhatsApp replies are "
+        "refused (seen on Twilio trial accounts)"
+    ),
+    63016: "more than 24-hour since the customer's last WhatsApp message; templates only",
+    63015: "the customer's number has not joined the sandbox (send the join code first)",
+}
+
+
 def _error_text(response: httpx.Response) -> str:
     try:
         payload = response.json()
@@ -135,4 +146,6 @@ def _error_text(response: httpx.Response) -> str:
         return f"Twilio HTTP {response.status_code}"
     code = payload.get("code")
     message = str(payload.get("message", "")).strip()
-    return f"Twilio {code}: {message}"[:300] if code else f"Twilio HTTP {response.status_code}"
+    if not code:
+        return f"Twilio HTTP {response.status_code}"
+    return f"Twilio {code}: {KNOWN_ERRORS.get(code, message)}"[:300]

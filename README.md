@@ -141,6 +141,7 @@ cd backend; uv run python -m scripts.check_channels
 
 1. In the Twilio console copy the **Account SID** and **Auth Token** into `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
 2. Open **Messaging → Try it out → Send a WhatsApp message** (or https://console.twilio.com/us1/develop/sms/settings/whatsapp-sandbox). From your phone, send the two-word `join <code>` text shown there to **+1 415 523 8886**. The join lasts 3 days.
+   - **Twilio trial accounts:** on a new trial account (2026) Twilio refused every free-text WhatsApp reply through the API (21654), and templates are not available on trial. Incoming WhatsApp works; replies need an upgraded account. The failed message in the app says so.
    - **Not** the "WhatsApp Tryout" number that answers `join twilio-trial` ("Standard auto-reply… Tryout UI"). That trial sender rejects free-text messages through the API (Twilio 21654, ContentSid Required), so agent replies cannot be delivered from it.
 3. Start everything with `.\start.ps1`. It starts a cloudflared tunnel (install it with `winget install --id Cloudflare.cloudflared --source winget`), writes the `https://….trycloudflare.com` address into `PUBLIC_BASE_URL`, and copies the webhook URL to the clipboard. Webhook signatures are checked against `PUBLIC_BASE_URL`.
 4. (By hand instead: `cloudflared tunnel --url http://localhost:8000`, put the address in `PUBLIC_BASE_URL` without a trailing slash, then start the api.)

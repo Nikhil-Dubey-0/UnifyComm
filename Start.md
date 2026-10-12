@@ -1,50 +1,83 @@
-## Start everything (4 terminals)
+Here's the full sequence, from a fresh start (after a reboot, or on presentation day). Run everything in **PowerShell**.
 
-PostgreSQL starts with Windows, so no step is needed for it. Open **4 PowerShell windows**:
-
-**Terminal 1: tunnel** (only needed for real WhatsApp; skip it for a simulator-only demo)
+## 1. Stop anything still running
 ```powershell
-& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8000
+cd C:\UnifyComm
+.\stop.ps1
 ```
-After a few seconds it prints an address like `https://something-random.trycloudflare.com`. Copy it, then:
-1. Open `C:\UnifyComm\.env` and set `PUBLIC_BASE_URL=https://something-random.trycloudflare.com` (no `/` at the end). Save.
-2. In Twilio → **Sandbox settings** → **"When a message comes in"**, paste the same address followed by `/api/webhooks/twilio/whatsapp`. Save.
 
-**Terminal 2: API**
+## 2. (Optional) Clean the demo data
+Do this before showing teachers. It wipes all conversations but keeps the demo customers (Rahul, Priya, Amit) and you as the test contact.
 ```powershell
 cd C:\UnifyComm\backend
-uv run uvicorn app.main:app --port 8000
+uv run python -m scripts.seed --reset
+cd C:\UnifyComm
 ```
 
-**Terminal 3: worker** (AI models, sending messages, reading Gmail)
+## 3. Start everything with one command
 ```powershell
-cd C:\UnifyComm\backend
-uv run python -m app.worker
+cd C:\UnifyComm
+.\start.ps1
 ```
-Wait about 40 seconds for the AI models to load.
-
-**Terminal 4: web app**
-```powershell
-cd C:\UnifyComm\frontend
-npm run dev
+This opens 3 windows (**api**, **worker**, **web**), starts the tunnel, updates `.env`, and prints a line like this:
 ```
-Open http://localhost:3000 and sign in with `agent@unifycomm.local` / `demo1234`.
+Paste this into Twilio > WhatsApp Sandbox settings > 'When a message comes in' (POST):
+  https://xxxx-xxxx-xxxx.trycloudflare.com/api/webhooks/twilio/whatsapp
+(already copied to the clipboard)
+```
+Wait about **40 seconds** for the worker to load the AI models.
 
-Start the tunnel **before** the API. The API reads `PUBLIC_BASE_URL` only when it starts, so if you change it later, restart Terminal 2 (Ctrl+C, then run the command again).
+To start without WhatsApp (simulator and email only), use `.\start.ps1 -NoTunnel` and skip step 5.
 
-## Check that it all works
+## 4. Check that everything works
 ```powershell
 cd C:\UnifyComm\backend
 uv run python -m scripts.check_channels
 ```
-Every line should say **ok**, and the tunnel line should show **HTTP 200**. In the app, hover the activity icon at the bottom of the left bar: Worker running, Gmail connected, WhatsApp configured.
+You should see:
+```
+gmail IMAP: ok
+gmail SMTP: ok
+gmail allowlist: 1 sender(s)
+twilio API: ok
+tunnel: HTTP 200 ...
+```
 
-## Before presenting to teachers
-- Clean the demo data: `cd C:\UnifyComm\backend; uv run python -m scripts.seed --reset`. This wipes all conversations and keeps the demo customers and your own test contact.
-- On your phone, send `join <code>` to the Twilio sandbox number again. The join lasts only 72 hours.
-- For a faster app during the presentation, use `npm run build` then `npm start` in Terminal 4 instead of `npm run dev`.
+## 5. Twilio (each time you run `start.ps1`, because the address changes)
+1. Open https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn?frameUrl=%2Fconsole%2Fsms%2Fwhatsapp%2Flearn%3Fx-target-region%3Dus1
+2. In **"When a message comes in"**, paste the URL from step 3 (it's on your clipboard). Method **POST**. Click **Save**.
+3. On your phone, send the **two-word join code** shown on that page (like `join silver-river`) to **+1 415 523 8886**. Only needed once every 72 hours. Use the **two-word** code, not `join twilio-trial`.
 
-## Stop everything
-Press **Ctrl+C** in each terminal. If port 3000 is still busy afterwards, close leftover Node processes in Task Manager.
+## 6. Use the app
+- Open **http://localhost:3000**
+- Sign in with **agent@unifycomm.local** / **demo1234**
+- **WhatsApp test:** send a message to **+1 415 523 8886** from your phone.
+- **Email test:** send from **nikhildubey2thousand3@gmail.com** to **nikhil.dubey.2004.oct@gmail.com**.
+- **Simulator:** the phone icon in the left bar.
 
-I can also make a `start.ps1` file that opens all four windows with one double-click, if that would help on presentation day.
+## 7. Stop everything when done
+```powershell
+cd C:\UnifyComm
+.\stop.ps1
+```
+
+## If you'd rather do it by hand (4 separate terminals)
+```powershell
+# Terminal 1: tunnel. Copy the https://...trycloudflare.com address it prints,
+# put it in C:\UnifyComm\.env as PUBLIC_BASE_URL=<address>, then start Terminal 2.
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8000
+
+# Terminal 2: API
+cd C:\UnifyComm\backend
+uv run uvicorn app.main:app --port 8000
+
+# Terminal 3: worker (AI models, sending, reading Gmail)
+cd C:\UnifyComm\backend
+uv run python -m app.worker
+
+# Terminal 4: web app
+cd C:\UnifyComm\frontend
+npm run dev
+```
+
+**If Terminal 2 says "only one usage of each socket address"**, an old copy is still running. Run `.\stop.ps1` and start again.

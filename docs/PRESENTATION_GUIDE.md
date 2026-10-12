@@ -128,7 +128,7 @@ Every check is **stored**, including blocked messages, and the **Compliance log*
 | 6 | **Customers → New customer** with a phone + email, then write from the simulator on WhatsApp, then email | "Registering a customer links their contacts, so every channel lands in one conversation." |
 | 7 | (Optional) Stop the worker, send a message, start the worker | "Messages are never lost: analysis just waits." |
 | 8 | **Metrics** page | "Response times, how often agents used the AI draft, what was blocked by which rule, and how fast our models are, all measured from real data." |
-| 9 | (If set up) a real WhatsApp message from your phone, and a real email | "The same pipeline, but with real providers. The tag says *via Twilio* / *via Gmail* instead of *simulated*." |
+| 9 | (If set up) a real WhatsApp message from your phone, then a real email from your test address, then reply by **email** | "The same pipeline, but with real providers: tagged *via Twilio* and *via Gmail*, both in one conversation because the bank knows both contacts. The email reply really arrives. A WhatsApp reply shows *Failed* with the reason: Twilio's free trial does not allow sending WhatsApp messages through the API; that is a paid-account restriction, not our code." |
 
 **The two inbox sort buttons** (top of the inbox): **Newest** puts the latest activity on top, which is easiest during a demo. **Most urgent** is how a real support desk works: urgent first, then the customer who has waited longest.
 
@@ -159,7 +159,7 @@ Every check is **stored**, including blocked messages, and the **Compliance log*
 ## 7. Be honest about limitations (teachers respect this)
 
 - English only; Hindi and Hinglish are future work.
-- WhatsApp uses Twilio's **sandbox** (free test mode). Production needs an approved WhatsApp Business account and templates.
+- WhatsApp uses Twilio's **sandbox** on a **free trial** account. Real incoming WhatsApp messages arrive, are analysed and join the customer's conversation, but Twilio's trial does not allow sending WhatsApp replies through the API (error 21654; templates are paid-only). We show WhatsApp replies with the simulator, and real replies by email. A paid Twilio account and an approved WhatsApp Business sender would remove this; no code change is needed. The app shows the reason on the failed message instead of hiding it.
 - DND and consent are our own database, not connected to the national DND registry.
 - Customer text is sent to OpenAI (redacted). A real bank would need a data-processing agreement or a self-hosted model.
 - The intent model's out-of-scope recall on its own is low (22.7 %). We handle it with the confidence floor, which brings catching off-topic questions to 91.6 %.
