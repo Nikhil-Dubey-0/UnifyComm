@@ -888,7 +888,7 @@ Metrics for the report (Session 5, `/metrics/summary`): first-response time, dra
 - [x] Load a few hundred generated messages; add indexes where queries are slow. (`scripts/load_test_data.py`: 372 messages, 215 conversations; every read endpoint p95 < 70 ms. One growing sequential scan found and indexed: `ix_jobs_summary_conversation`.)
 - [x] `README.md` (setup, run, demo, credits and licences). Optional `docker-compose.yml` for machines with Docker. (README done; the optional docker-compose was not made, D17: native only.)
 - [x] Run the `code-review` and `security-review` skills and fix findings. Rehearse the demo twice. (code-review: 10 findings, all fixed with tests first. security-review: the skill needs a git remote, so it was done by hand, §14; one finding fixed. Demo spec passed twice in a row with 215 extra conversations loaded.)
-- **Exit:** a real WhatsApp message and a real follow-up email from the same person land in one conversation; all tests green; the demo script runs twice in a row without touching code. (Demo twice: done. Same person across channels: proven in `test_channels.py` with faked providers; the live run is still open.)
+- **Exit:** a real WhatsApp message and a real follow-up email from the same person land in one conversation; all tests green; the demo script runs twice in a row without touching code. (Done 2026-10-13. Demo twice: done. Same person across channels, live: a real WhatsApp message and a real email from the test contact joined one conversation and the email reply was delivered. Outbound WhatsApp is blocked by the Twilio trial account (§9.2.2); the user chose to keep the trial.)
 
 Carry-over rule: unfinished items move to the top of the next session. A session never starts new work while tests are failing.
 
@@ -938,5 +938,5 @@ Run on a split screen: simulator on the left, agent workspace on the right.
 | PostgreSQL 17 installed | user | Session 1 | [x] Done (17.11, 2026-10-06) |
 | OpenAI API key in `.env` | user | Session 4 (fake mode works earlier) | [x] Done (verified with `gpt-6-luna`, 2026-10-07) |
 | Intent weights + notebook (Plan A) | teammate | Session 3 (else Plan B) | [x] Closed: Plan A failed, Plan B `repro-v1` in use (§8.2) |
-| Gmail account with 2-Step Verification + app password | user | Session 5 | [ ] Open |
-| Twilio account + WhatsApp sandbox join + ngrok/cloudflared | user | Session 5 | [ ] Open |
+| Gmail account with 2-Step Verification + app password | user | Session 5 | [x] Done (IMAP and SMTP verified 2026-10-12) |
+| Twilio account + WhatsApp sandbox join + ngrok/cloudflared | user | Session 5 | [x] Done for inbound; outbound needs a paid Twilio account (trial limit, §9.2.2) |
