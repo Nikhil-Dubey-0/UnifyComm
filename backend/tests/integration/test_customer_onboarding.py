@@ -118,3 +118,35 @@ async def test_inbox_can_show_newest_first(client, db, worker, auth_headers, see
     bad = await client.get("/api/conversations", params={"sort": "oldest"}, headers=auth_headers)
     assert bad.status_code == 422
     assert await db.scalar(select(Customer.id).where(Customer.verified.is_(False))) is not None
+
+
+async def test_linking_merges_the_open_conversations(
+    client, db, worker, agent, auth_headers, seeded
+):
+    """User bug: after a link the customer was merged but the inbox still showed two
+    conversations."""
+    a = (await post_inbound(client, "whatsapp", "+91 77777 00010", "My card is blocked")).json()
+    b = (await post_inbound(client, "email", "ryan2@example.org", "Any update?")).json()
+    await run_all_jobs(worker)
+    assert a["conversation_id"] != b["conversation_id"]
+
+    r = await client.post(
+        f"/api/customers/{a['customer_id']}/link",
+        json={"source_customer_id": b["customer_id"]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    detail = (await client.get(f"/api/customers/{a['customer_id']}", headers=auth_headers)).json()
+    assert [c["id"] for c in detail["conversations"]] == [a["conversation_id"]]
+    merged = (
+        await client.get(f"/api/conversations/{a['conversation_id']}", headers=auth_headers)
+    ).json()
+    bodies = [m["body"] for m in merged["messages"] if m["direction"] == "inbound"]
+    assert bodies == ["My card is blocked", "Any update?"]
+    gone = await client.get(f"/api/conversations/{b['conversation_id']}", headers=auth_headers)
+    assert gone.status_code == 404
+    audit = await db.scalar(select(AuditLog).where(AuditLog.action == "customer.link"))
+    assert audit.details["merged_conversation_ids"] == [b["conversation_id"]]
+    # The next email joins the merged conversation.
+    later = (await post_inbound(client, "email", "ryan2@example.org", "Hello?")).json()
+    assert later["conversation_id"] == a["conversation_id"]

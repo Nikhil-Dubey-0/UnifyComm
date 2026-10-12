@@ -7,15 +7,18 @@ from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import Channel, Consent, ContactKind
+from app.enums import Channel, Consent, ContactKind, ConversationStatus
 from app.errors import Conflict, NotFound
 from app.models import (
     Agent,
     AuditLog,
     ChannelPreference,
     Conversation,
+    ConversationSummary,
     Customer,
     CustomerContact,
+    Message,
+    ReplyDraft,
 )
 from app.schemas.common import Page
 from app.schemas.conversations import ConversationOut
@@ -27,6 +30,7 @@ from app.schemas.customers import (
     PreferenceOut,
 )
 from app.services import events, identity
+from app.services.conversations import ACTIVE_STATUSES
 from app.services.events import EventType
 
 
@@ -130,6 +134,15 @@ async def link(session: AsyncSession, *, target_id: int, source_id: int, actor: 
     if source.verified:
         raise Conflict("Only unverified customers can be linked.", code="source_verified")
 
+    # The target's current conversation, if any: the source's active one merges into it.
+    into = await session.scalar(
+        select(Conversation)
+        .where(Conversation.customer_id == target_id, Conversation.status.in_(ACTIVE_STATUSES))
+        .order_by(Conversation.last_activity_at.desc(), Conversation.id.desc())
+        .limit(1)
+        .with_for_update()
+    )
+
     moved_contacts = (
         (
             await session.execute(
@@ -154,6 +167,19 @@ async def link(session: AsyncSession, *, target_id: int, source_id: int, actor: 
         .scalars()
         .all()
     )
+    merged: list[int] = []
+    if into is not None:
+        for conversation in await session.scalars(
+            select(Conversation)
+            .where(
+                Conversation.id.in_(moved_conversations),
+                Conversation.status.in_(ACTIVE_STATUSES),
+            )
+            .order_by(Conversation.id)
+            .with_for_update()
+        ):
+            await _merge_conversation(session, into=into, source=conversation)
+            merged.append(conversation.id)
     # The target's own preferences win; the source's are dropped with the source row.
     await session.execute(delete(Customer).where(Customer.id == source_id))
 
@@ -168,6 +194,8 @@ async def link(session: AsyncSession, *, target_id: int, source_id: int, actor: 
                 "source_display_name": source.display_name,
                 "moved_contact_ids": list(moved_contacts),
                 "moved_conversation_ids": list(moved_conversations),
+                "merged_conversation_ids": merged,
+                "merged_into_conversation_id": into.id if merged and into else None,
             },
         )
     )
@@ -176,6 +204,45 @@ async def link(session: AsyncSession, *, target_id: int, source_id: int, actor: 
     await session.commit()
     await session.refresh(target)
     return target
+
+
+_PRIORITY_RANK = {p: i for i, p in enumerate(["low", "normal", "high", "urgent"])}
+
+
+async def _merge_conversation(
+    session: AsyncSession, *, into: Conversation, source: Conversation
+) -> None:
+    """§6.6: one person, one active conversation. Moves the source's messages and drafts
+    into `into` and deletes the source row; its summaries are dropped (the merged
+    history is re-summarised on request)."""
+    await session.execute(
+        update(Message).where(Message.conversation_id == source.id).values(conversation_id=into.id)
+    )
+    await session.execute(
+        update(ReplyDraft)
+        .where(ReplyDraft.conversation_id == source.id)
+        .values(conversation_id=into.id)
+    )
+    await session.execute(
+        delete(ConversationSummary).where(ConversationSummary.conversation_id == source.id)
+    )
+    into.created_at = min(into.created_at, source.created_at)
+    into.last_activity_at = max(into.last_activity_at, source.last_activity_at)
+    for field in ("last_inbound_at", "last_outbound_at"):
+        values = [v for v in (getattr(into, field), getattr(source, field)) if v is not None]
+        setattr(into, field, max(values) if values else None)
+    responses = [v for v in (into.first_response_at, source.first_response_at) if v is not None]
+    into.first_response_at = min(responses) if responses else None
+    if _PRIORITY_RANK[source.priority] > _PRIORITY_RANK[into.priority]:
+        into.priority = source.priority
+    if into.category is None and source.category is not None:
+        into.category = source.category
+        into.primary_intent = source.primary_intent
+        into.primary_intent_confidence = source.primary_intent_confidence
+    if ConversationStatus.open in (into.status, source.status):
+        into.status = ConversationStatus.open
+    await session.delete(source)
+    await session.flush()
 
 
 async def update_preference(

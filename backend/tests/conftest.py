@@ -24,6 +24,7 @@ def settings() -> Settings:
             "email_allowed_senders": "",
             "twilio_account_sid": "",
             "twilio_auth_token": SecretStr(""),
+            "twilio_whatsapp_from": "whatsapp:+14155238886",
             "public_base_url": "",
             "test_contact_name": "",
             "test_contact_phone": "",

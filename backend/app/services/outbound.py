@@ -70,6 +70,13 @@ class Route:
     last_inbound_meta: dict[str, Any] | None = None
 
 
+def _business_address(inbound_meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Our address the customer wrote to (Twilio `To`): replies are sent from it."""
+    if inbound_meta and inbound_meta.get("business_address"):
+        return {"business_address": inbound_meta["business_address"]}
+    return {}
+
+
 def email_thread_meta(inbound_meta: dict[str, Any] | None) -> dict[str, Any]:
     """§9.2.1: reply in the customer's email thread (subject, In-Reply-To, References)."""
     if not inbound_meta:
@@ -278,6 +285,7 @@ async def _submit(
             draft_id=draft.id if draft else None,
             meta={
                 **(email_thread_meta(route.last_inbound_meta) if channel == Channel.email else {}),
+                **_business_address(route.last_inbound_meta),
                 **(meta or {}),
                 "to": route.to,
             },

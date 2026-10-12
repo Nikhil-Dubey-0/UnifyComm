@@ -58,6 +58,9 @@ def parse_inbound(form: Mapping[str, str]) -> InboundMessage:
     num_media = int(form.get("NumMedia", "0") or 0)
     body = (form.get("Body") or "").strip()
     metadata: dict = {}
+    if form.get("To"):
+        # Our number the customer wrote to: replies must come from it (§9.2.2).
+        metadata["business_address"] = form["To"]
     if num_media:
         metadata["num_media"] = num_media
     return InboundMessage(
@@ -83,7 +86,9 @@ class TwilioWhatsAppAdapter:
     async def send(self, msg: OutboundMessage) -> SendResult:
         s = self._settings
         data = {
-            "From": s.twilio_whatsapp_from,
+            # Reply from the number the customer wrote to; Twilio rejects free-form
+            # messages from any other sender (21654, ContentSid required).
+            "From": msg.metadata.get("business_address") or s.twilio_whatsapp_from,
             "To": whatsapp_address(msg.to),
             "Body": msg.body,
         }

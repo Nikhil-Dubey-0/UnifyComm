@@ -65,13 +65,14 @@ def test_parse_inbound():
     assert inbound.external_id == INBOUND["MessageSid"]
     assert (inbound.sender_kind, inbound.sender_raw) == ("phone", "whatsapp:+919876543210")
     assert (inbound.sender_name, inbound.body) == ("Rahul", "My payment failed")
-    assert inbound.metadata == {}
+    assert inbound.metadata == {"business_address": "whatsapp:+14155238886"}
 
 
 def test_media_only_message_gets_a_placeholder():
     inbound = parse_inbound({**INBOUND, "Body": "", "NumMedia": "1", "ProfileName": ""})
     assert inbound.body == MEDIA_ONLY_BODY
-    assert inbound.metadata == {"num_media": 1} and inbound.sender_name is None
+    assert inbound.metadata == {"business_address": "whatsapp:+14155238886", "num_media": 1}
+    assert inbound.sender_name is None
 
 
 def test_status_map():

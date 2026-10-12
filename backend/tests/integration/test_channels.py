@@ -533,3 +533,16 @@ async def test_seed_moves_the_test_contacts_onto_one_customer(
         )
     }
     assert owners["phone"] == owners["email"]
+
+
+async def test_reply_comes_from_the_number_the_customer_wrote_to(
+    client, db, worker, channels, sent_to_twilio
+):
+    """User bug: Twilio 21654 when the account's sandbox is not +1 415 523 8886."""
+    form = {**wa_form("SMbiz1", "My card failed"), "To": "whatsapp:+17005550134"}
+    assert (await twilio_post(client, "/api/webhooks/twilio/whatsapp", form)).status_code == 200
+    await run_all_jobs(worker)
+    inbound = await db.scalar(select(Message).where(Message.direction == "inbound"))
+    assert inbound.meta["business_address"] == "whatsapp:+17005550134"
+    [ack] = sent_to_twilio
+    assert ack["From"] == "whatsapp:+17005550134"
