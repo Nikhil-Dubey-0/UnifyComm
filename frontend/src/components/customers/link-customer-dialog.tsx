@@ -34,7 +34,8 @@ export function LinkCustomerDialog({
   const [targetId, setTargetId] = useState<number | null>(null);
   const customers = useCustomers(q.trim());
   const link = useLinkCustomer();
-  const candidates = customers.data?.items.filter((c) => c.verified && c.id !== sourceId) ?? [];
+  // Any other customer: a verified one, or another unverified sender known to be the same person.
+  const candidates = customers.data?.items.filter((c) => c.id !== sourceId) ?? [];
   const target = candidates.find((c) => c.id === targetId);
 
   function confirm() {
@@ -73,8 +74,8 @@ export function LinkCustomerDialog({
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search verified customers"
-            aria-label="Search verified customers"
+            placeholder="Search customers by name, phone or email"
+            aria-label="Search customers"
             className="pl-8"
             autoFocus
           />
@@ -82,7 +83,7 @@ export function LinkCustomerDialog({
         <ul className="max-h-64 divide-y overflow-y-auto rounded-md border" role="listbox">
           {candidates.length === 0 && (
             <li className="p-4 text-center text-sm text-muted-foreground">
-              {customers.isLoading ? "Searching…" : "No verified customers match."}
+              {customers.isLoading ? "Searching…" : "No customers match."}
             </li>
           )}
           {candidates.map((c) => (
@@ -100,7 +101,12 @@ export function LinkCustomerDialog({
                 <Avatar name={c.display_name} className="size-7" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1 text-sm font-medium">
-                    {c.display_name} <BadgeCheck className="size-3.5 text-primary" />
+                    {c.display_name}{" "}
+                    {c.verified ? (
+                      <BadgeCheck className="size-3.5 text-primary" />
+                    ) : (
+                      <span className="text-[11px] font-normal text-muted-foreground">unverified</span>
+                    )}
                   </span>
                   <span className="tabular block truncate text-xs text-muted-foreground">
                     {c.contacts.map((ct) => ct.value_normalized).join(" · ")}

@@ -34,7 +34,10 @@ export const keys = {
 
 export type ComplianceFilters = { passed?: boolean; rule_id?: string };
 
+export type InboxSort = "newest" | "waiting";
+
 export type ConversationFilters = {
+  sort?: InboxSort;
   status?: ConversationStatus;
   category?: string;
   priority?: Priority;
@@ -191,8 +194,11 @@ export function useSimulatorSend() {
       sender_name?: string;
       subject?: string;
     }) => call(api.POST("/api/channels/simulator/inbound", { body: input })),
-    onSettled: (_data, _err, input) =>
-      qc.invalidateQueries({ queryKey: ["simulator-thread", input.channel] }),
+    onSettled: (_data, _err, input) => {
+      qc.invalidateQueries({ queryKey: ["simulator-thread", input.channel] });
+      // A new sender becomes an (unverified) customer: list it in the simulator.
+      qc.invalidateQueries({ queryKey: keys.simulatorContacts });
+    },
   });
 }
 
@@ -295,5 +301,25 @@ export function useMetrics(days: number) {
     queryKey: ["metrics", days],
     queryFn: () => call(api.GET("/api/metrics/summary", { params: { query: { days } } })),
     refetchInterval: 60_000,
+  });
+}
+
+export function useCreateCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { display_name: string; phone?: string; email?: string }) =>
+      call(
+        api.POST("/api/customers", {
+          body: {
+            display_name: input.display_name,
+            phone: input.phone || null,
+            email: input.email || null,
+          },
+        }),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: keys.simulatorContacts });
+    },
   });
 }

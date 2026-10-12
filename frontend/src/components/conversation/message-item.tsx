@@ -12,7 +12,7 @@ import { ChannelIcon } from "@/components/badges";
 import { AiChips } from "@/components/conversation/ai-chips";
 import { Button } from "@/components/ui/button";
 import type { DeliveryStatus, Message } from "@/lib/api/client";
-import { CHANNEL_LABEL, DELIVERY_LABEL, formatTime } from "@/lib/format";
+import { CHANNEL_LABEL, DELIVERY_LABEL, formatTime, PROVIDER_LABEL } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const DELIVERY_ICON: Record<DeliveryStatus, typeof Check> = {
@@ -74,6 +74,20 @@ export function MessageItem({
         {!inbound && m.sender_type === "agent" && agentName && <span>{agentName} ·</span>}
         <ChannelIcon channel={m.channel} className="size-3" />
         <span>{CHANNEL_LABEL[m.channel]}</span>
+        <span
+          data-testid="provider"
+          className={cn(
+            "rounded px-1 text-[10px]",
+            m.provider === "simulator" ? "bg-muted" : "bg-ok/12 font-medium text-ok",
+          )}
+          title={
+            m.provider === "simulator"
+              ? "Sent through the customer simulator"
+              : "Sent through a real provider"
+          }
+        >
+          {PROVIDER_LABEL[m.provider]}
+        </span>
         <span>·</span>
         <time dateTime={m.created_at} className="tabular">
           {formatTime(m.created_at)}

@@ -11,13 +11,25 @@ from app.services import identity
 THREAD_LIMIT = 200
 
 
+RECENT_UNVERIFIED = 30
+
+
 async def contacts(session: AsyncSession) -> list[SimulatorContact]:
-    """Verified (seeded) customers with one address per channel."""
+    """Verified customers (seeded or registered), then the most recent unverified senders,
+    each with one address per channel. Listing unverified senders lets a sender created in
+    the simulator write again on another channel."""
+    recent = (
+        select(Customer.id)
+        .where(Customer.verified.is_(False))
+        .order_by(Customer.id.desc())
+        .limit(RECENT_UNVERIFIED)
+        .scalar_subquery()
+    )
     rows = await session.execute(
         select(Customer, CustomerContact)
         .join(CustomerContact, CustomerContact.customer_id == Customer.id)
-        .where(Customer.verified.is_(True))
-        .order_by(Customer.id, CustomerContact.id)
+        .where(Customer.verified.is_(True) | Customer.id.in_(recent))
+        .order_by(Customer.verified.desc(), Customer.id, CustomerContact.id)
     )
     result: dict[int, SimulatorContact] = {}
     for customer, contact in rows:
@@ -36,7 +48,11 @@ async def contacts(session: AsyncSession) -> list[SimulatorContact]:
             addresses.sms = addresses.sms or contact.value_normalized
         else:
             addresses.email = addresses.email or contact.value_normalized
-    return list(result.values())
+    verified = [c for c in result.values() if c.verified]
+    unverified = sorted(
+        (c for c in result.values() if not c.verified), key=lambda c: -c.customer_id
+    )
+    return verified + unverified
 
 
 async def thread(

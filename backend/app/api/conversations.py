@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, Query, status
 
@@ -39,6 +39,13 @@ async def list_conversations(
     priority: Priority | None = None,
     assignee: Annotated[str | None, Query(description="'me', 'unassigned' or an agent id")] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    sort: Annotated[
+        Literal["waiting", "newest"],
+        Query(
+            description="waiting: urgent and longest-waiting first (§7.5); "
+            "newest: latest activity first"
+        ),
+    ] = "waiting",
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> Page[ConversationListItem]:
@@ -46,7 +53,7 @@ async def list_conversations(
         status=status_, category=category, priority=priority, assignee=assignee, q=q
     )
     return await inbox.list_conversations(
-        session, filters, agent_id=agent.id, cursor=cursor, limit=limit
+        session, filters, agent_id=agent.id, cursor=cursor, limit=limit, sort=sort
     )
 
 

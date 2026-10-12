@@ -347,7 +347,7 @@ jobs, audit_log, system_status: standalone
 | context | jsonb not null | purpose, channel, local time, consent, dnd |
 | evaluated_at | timestamptz not null | index `(passed, evaluated_at)` |
 
-**audit_log**: `id, actor_agent_id null, action text, target_type text, target_id bigint, details jsonb, created_at`. Actions: `customer.link`, `preferences.update`, `conversation.update`.
+**audit_log**: `id, actor_agent_id null, action text, target_type text, target_id bigint, details jsonb, created_at`. Actions: `customer.create`, `customer.link`, `preferences.update`, `conversation.update`.
 
 **system_status**: `key text PK, value jsonb, updated_at`. The worker writes `worker.heartbeat` every 10 s, and channel pollers write `channel.<name>`.
 
@@ -416,7 +416,7 @@ Inputs are the previous summary and messages after its `covers_until_message_id`
 
 ### 6.6 Link an unverified sender (API)
 
-`POST /api/customers/{target_id}/link {"source_customer_id": N}` is allowed only when the source is unverified. In one transaction it moves the source's contacts and conversations to the target, deletes the source, and writes `audit_log`. It never runs automatically.
+`POST /api/customers/{target_id}/link {"source_customer_id": N}` is allowed only when the source is unverified. The target may be verified or unverified (two unknown senders the agent knows to be one person). In one transaction it moves the source's contacts and conversations to the target, deletes the source, and writes `audit_log`. It never runs automatically.
 
 ---
 
@@ -458,7 +458,7 @@ Computed on every analysis, from the highest applicable rule:
 2. Any of the last 3 inbound messages is `negative` with confidence ≥ 0.70 → raise the category default by one level.
 3. Category default: `payments_billing`, `transfers_topups`, `cards`, `account_access`, `loans_credit` → `normal`. `general_banking`, `out_of_scope`, no category → `low`.
 
-Inbox sort: priority (urgent first), then `last_inbound_at` ascending for `open` conversations, meaning the longest waiting first.
+Inbox sort: priority (urgent first), then `last_inbound_at` ascending for `open` conversations, meaning the longest waiting first. This is the default (`sort=waiting`): a support desk serves the most urgent and longest-waiting customers first. `sort=newest` orders by `last_activity_at` descending instead (latest activity on top), for browsing and demos.
 
 ### 7.6 Compliance
 
@@ -665,11 +665,11 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | GET | `/agents` | | active agents `[Agent]` (assignee picker and names) |
 | GET | `/health` | | `{db, worker_heartbeat_at, ai_mode, llm_configured, channels}` |
 | POST | `/channels/simulator/inbound` | `{channel, from, sender_name?, body, subject?, external_id?}` (a missing `external_id` gets a generated one) | `201 {message_id, conversation_id, customer_id, duplicate}`; a duplicate `external_id` returns `200` with `duplicate: true` and the original IDs |
-| GET | `/simulator/contacts` | | seeded customers with contacts per channel |
+| GET | `/simulator/contacts` | | customers with an address per channel: verified customers first, then the 30 most recent unverified senders (so a sender created in the simulator can be picked again) |
 | GET | `/simulator/thread` | `?channel=&address=` | messages to and from that address on that channel |
 | POST | `/webhooks/twilio/whatsapp` | Twilio form | `200` empty TwiML |
 | POST | `/webhooks/twilio/status` | Twilio form | `200` |
-| GET | `/conversations` | `?status=&category=&priority=&assignee=me\|unassigned\|<id>&q=&cursor=&limit=` | list of `ConversationSummary`; `last_message` skips the acknowledgement template and blocked messages |
+| GET | `/conversations` | `?status=&category=&priority=&assignee=me\|unassigned\|<id>&q=&sort=waiting\|newest&cursor=&limit=` | list of `ConversationSummary`; `last_message` skips the acknowledgement template and blocked messages |
 | GET | `/conversations/{id}` | | `ConversationDetail` (conversation, customer, messages with AI results and compliance checks, latest summary, `summary_job`) |
 | PATCH | `/conversations/{id}` | `{status?, assignee_id?}` | `Conversation` |
 | POST | `/conversations/{id}/summarize` | | `202 {job_id}` (an already queued job's id if one exists) or `503 llm_unavailable` |
@@ -678,6 +678,7 @@ Base path `/api`. JSON in snake_case. Auth is `Authorization: Bearer <JWT>` on e
 | POST | `/messages/{id}/analyze` | | `202 {job_id}` |
 | POST | `/messages/{id}/retry` | | `202` (failed deliveries only). Clears the provider's external ID so a late callback for the first attempt cannot change the new one |
 | GET | `/customers` | `?q=&cursor=&limit=` | list of customers with `contacts` and `preferences` (the preferences admin page reads it) |
+| POST | `/customers` | `{display_name, phone?, email?}` (at least one contact) | `201 Customer`: a verified customer with verified contacts, as after KYC onboarding; consent stays `unknown` until set. `409 contact_taken` if a contact already belongs to a customer (link that sender instead). Audit `customer.create` |
 | GET | `/customers/{id}` | | `{customer, contacts, preferences, conversations}` |
 | POST | `/customers/{id}/link` | `{source_customer_id}` | `Customer` |
 | PUT | `/customers/{id}/preferences` | `{channel, consent, dnd}` | `Preference` (upsert; any agent; writes `audit_log` `preferences.update` with before and after) |

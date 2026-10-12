@@ -150,7 +150,10 @@ test("demo steps 1–5: one conversation across channels, AI assistance, complia
     const thread = agent.getByTestId("thread");
     await expect(thread).toContainText(rahulFirst);
     const first = thread.getByTestId("message").filter({ hasText: rahulFirst });
-    await expect(first.getByTestId("ai-chips")).toContainText("Payments & Billing");
+    // Right after a worker start the real models need 30-40 s to load.
+    await expect(first.getByTestId("ai-chips")).toContainText("Payments & Billing", {
+      timeout: AI_TIMEOUT,
+    });
     await expect(first.getByTestId("ai-chips")).toContainText("Negative");
     const header = agent.locator("header").filter({ hasText: "Conversation #" });
     await expect(header).toContainText("Payments & Billing");

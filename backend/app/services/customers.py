@@ -7,7 +7,7 @@ from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.enums import Channel, Consent
+from app.enums import Channel, Consent, ContactKind
 from app.errors import Conflict, NotFound
 from app.models import (
     Agent,
@@ -26,7 +26,7 @@ from app.schemas.customers import (
     CustomerWithContacts,
     PreferenceOut,
 )
-from app.services import events
+from app.services import events, identity
 from app.services.events import EventType
 
 
@@ -218,3 +218,57 @@ async def update_preference(
         ChannelPreference, (customer_id, str(channel)), populate_existing=True
     )
     return pref
+
+
+async def create_customer(
+    session: AsyncSession,
+    *,
+    display_name: str,
+    phone: str | None,
+    email: str | None,
+    actor: Agent,
+) -> Customer:
+    """Staff registration of a known customer (KYC onboarding): a verified customer whose
+    phone and email resolve to it on every channel (§7.1). Contacts are inserted with
+    ON CONFLICT, so a contact that already belongs to someone is reported, never moved.
+    Commits."""
+    contacts = []
+    if phone and phone.strip():
+        contacts.append((ContactKind.phone, identity.normalize(ContactKind.phone, phone)))
+    if email and email.strip():
+        contacts.append((ContactKind.email, identity.normalize(ContactKind.email, email)))
+
+    customer = Customer(display_name=display_name, verified=True)
+    session.add(customer)
+    await session.flush()
+    for kind, value in contacts:
+        inserted = await session.scalar(
+            insert(CustomerContact)
+            .values(customer_id=customer.id, kind=kind, value_normalized=value, verified=True)
+            .on_conflict_do_nothing(index_elements=["kind", "value_normalized"])
+            .returning(CustomerContact.id)
+        )
+        if inserted is None:
+            owner = await session.scalar(
+                select(Customer.display_name)
+                .join(CustomerContact, CustomerContact.customer_id == Customer.id)
+                .where(CustomerContact.kind == kind, CustomerContact.value_normalized == value)
+            )
+            await session.rollback()
+            raise Conflict(
+                f"{value} already belongs to {owner}. Open that customer instead, or link it "
+                "from its customer page if it is an unverified sender.",
+                code="contact_taken",
+            )
+    session.add(
+        AuditLog(
+            actor_agent_id=actor.id,
+            action="customer.create",
+            target_type="customer",
+            target_id=customer.id,
+            details={"contacts": [{"kind": str(k), "value": v} for k, v in contacts]},
+        )
+    )
+    await session.commit()
+    await session.refresh(customer)
+    return customer

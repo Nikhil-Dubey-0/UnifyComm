@@ -21,7 +21,8 @@ export default function SimulatorPage() {
   const contacts = useSimulatorContacts();
   const [persona, setPersona] = useState<number | typeof CUSTOM | null>(null);
   const [channel, setChannel] = useState<Channel>("whatsapp");
-  const [customAddress, setCustomAddress] = useState("");
+  const [customPhone, setCustomPhone] = useState("");
+  const [customEmail, setCustomEmail] = useState("");
   const [customName, setCustomName] = useState("");
 
   // Until the user picks someone, the first seeded customer is selected.
@@ -30,8 +31,11 @@ export default function SimulatorPage() {
     typeof activePersona === "number"
       ? contacts.data?.find((c) => c.customer_id === activePersona)
       : undefined;
+  const customAddress = channel === "email" ? customEmail : customPhone;
   const address =
     activePersona === CUSTOM ? customAddress.trim() : (selected?.addresses[channel] ?? "");
+  const known = contacts.data?.filter((c) => c.verified) ?? [];
+  const recent = contacts.data?.filter((c) => !c.verified) ?? [];
   const name = activePersona === CUSTOM ? customName.trim() : (selected?.display_name ?? "");
 
   return (
@@ -57,7 +61,8 @@ export default function SimulatorPage() {
           <legend className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Customer
           </legend>
-          {contacts.data?.map((c) => (
+          <p className="text-[11px] text-muted-foreground">Known to the bank (verified)</p>
+          {known.map((c) => (
             <PersonaButton
               key={c.customer_id}
               contact={c}
@@ -65,6 +70,21 @@ export default function SimulatorPage() {
               onClick={() => setPersona(c.customer_id)}
             />
           ))}
+          {recent.length > 0 && (
+            <>
+              <p className="pt-2 text-[11px] text-muted-foreground">Recent new senders (unverified)</p>
+              <div className="max-h-48 space-y-2 overflow-y-auto" data-testid="recent-senders">
+                {recent.map((c) => (
+                  <PersonaButton
+                    key={c.customer_id}
+                    contact={c}
+                    active={activePersona === c.customer_id}
+                    onClick={() => setPersona(c.customer_id)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setPersona(CUSTOM)}
@@ -79,20 +99,31 @@ export default function SimulatorPage() {
             </span>
             <span>
               <span className="block font-medium">New sender</span>
-              <span className="text-xs text-muted-foreground">Any phone number or email</span>
+              <span className="text-xs text-muted-foreground">A phone number, an email, or both</span>
             </span>
           </button>
           {activePersona === CUSTOM && (
             <div className="space-y-2 rounded-lg border border-dashed p-3">
               <div className="space-y-1">
-                <Label htmlFor="sim-address" className="text-xs">
-                  {channel === "email" ? "Email address" : "Phone number"}
+                <Label htmlFor="sim-phone" className="text-xs">
+                  Phone number
                 </Label>
                 <Input
-                  id="sim-address"
-                  value={customAddress}
-                  onChange={(e) => setCustomAddress(e.target.value)}
-                  placeholder={channel === "email" ? "someone@example.com" : "+91 90000 00000"}
+                  id="sim-phone"
+                  value={customPhone}
+                  onChange={(e) => setCustomPhone(e.target.value)}
+                  placeholder="+91 90000 00000 (WhatsApp and SMS)"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="sim-email" className="text-xs">
+                  Email address
+                </Label>
+                <Input
+                  id="sim-email"
+                  value={customEmail}
+                  onChange={(e) => setCustomEmail(e.target.value)}
+                  placeholder="someone@example.com (email)"
                 />
               </div>
               <div className="space-y-1">
@@ -101,6 +132,11 @@ export default function SimulatorPage() {
                 </Label>
                 <Input id="sim-name" value={customName} onChange={(e) => setCustomName(e.target.value)} />
               </div>
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                An unknown phone number and an unknown email become two separate unverified
+                customers: the bank never guesses that they are one person. Register the
+                customer under Customers → New customer, or let an agent link the two senders.
+              </p>
             </div>
           )}
         </fieldset>
@@ -135,7 +171,15 @@ export default function SimulatorPage() {
       </aside>
 
       <section className="flex min-w-0 flex-1 items-center justify-center p-6">
-        <Phone channel={channel} address={address} name={name} />
+        <Phone
+          channel={channel}
+          address={address}
+          name={name}
+          onSent={(customerId) => {
+            // The new sender is now saved: select it, as the customer list will show it.
+            if (activePersona === CUSTOM) setPersona(customerId);
+          }}
+        />
       </section>
     </div>
   );
@@ -164,14 +208,24 @@ function PersonaButton({
       <span className="min-w-0">
         <span className="block font-medium">{contact.display_name}</span>
         <span className="tabular block truncate text-xs text-muted-foreground">
-          {contact.addresses.whatsapp ?? contact.addresses.email}
+          {[contact.addresses.whatsapp, contact.addresses.email].filter(Boolean).join(" · ")}
         </span>
       </span>
     </button>
   );
 }
 
-function Phone({ channel, address, name }: { channel: Channel; address: string; name: string }) {
+function Phone({
+  channel,
+  address,
+  name,
+  onSent,
+}: {
+  channel: Channel;
+  address: string;
+  name: string;
+  onSent: (customerId: number) => void;
+}) {
   const thread = useSimulatorThread(channel, address);
   const sendMessage = useSimulatorSend();
   const [body, setBody] = useState("");
@@ -195,7 +249,10 @@ function Phone({ channel, address, name }: { channel: Channel; address: string; 
         subject: channel === "email" && subject.trim() ? subject.trim() : undefined,
       },
       {
-        onSuccess: () => setBody(""),
+        onSuccess: (result) => {
+          setBody("");
+          onSent(result.customer_id);
+        },
         onError: (err) => toast.error("Message not sent", { description: err.message }),
       },
     );

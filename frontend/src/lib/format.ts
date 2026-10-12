@@ -1,5 +1,7 @@
 import type { Channel, ConversationStatus, DeliveryStatus, Priority } from "@/lib/api/client";
 
+export type Provider = "simulator" | "twilio" | "gmail";
+
 const TIMEZONE = "Asia/Kolkata"; // display in IST (CLAUDE.md)
 
 const timeFmt = new Intl.DateTimeFormat("en-IN", {
@@ -68,6 +70,13 @@ export const CHANNEL_LABEL: Record<Channel, string> = {
   whatsapp: "WhatsApp",
   sms: "SMS",
   email: "Email",
+};
+
+/** Which system carried a message: the simulator or a real provider (ARCHITECTURE D16). */
+export const PROVIDER_LABEL: Record<Provider, string> = {
+  simulator: "simulated",
+  twilio: "via Twilio",
+  gmail: "via Gmail",
 };
 
 export const PRIORITY_LABEL: Record<Priority, string> = {

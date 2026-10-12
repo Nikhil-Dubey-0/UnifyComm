@@ -11,13 +11,14 @@ ingest → identify customer → attach to conversation → intent + sentiment �
 
 - **Design and contracts:** [`ARCHITECTURE.md`](ARCHITECTURE.md) (tables, endpoints, events, compliance rules, the demo script in §17).
 - **How the code was built:** [`CLAUDE.md`](CLAUDE.md) (status, conventions) and [`SKILLS.md`](SKILLS.md).
+- **Presenting it:** [`docs/PRESENTATION_GUIDE.md`](docs/PRESENTATION_GUIDE.md) (what to say, demo script, likely questions).
 
 ## What it does
 
 | Area | What is real |
 |---|---|
 | Channels | Customer simulator for WhatsApp, SMS and email; real email through Gmail (IMAP/SMTP); real WhatsApp through the Twilio sandbox |
-| Identity | Exact phone (E.164) and email matching; unknown senders become unverified customers that an agent can link |
+| Identity | Exact phone (E.164) and email matching. Staff register known customers (Customers → New customer) so their phone and email share one conversation; unknown senders become unverified customers that an agent can link |
 | AI analysis | Intent: the team's MiniLM model (213 labels, Banking77 + CLINC150, retrained as `repro-v1`). Sentiment: `cardiffnlp/twitter-roberta-base-sentiment-latest`. Both run locally on CPU in the worker |
 | Routing | Category queues, sticky primary intent, priority from category and negative sentiment |
 | AI assistance | Reply drafts with "check before sending" hints, and conversation summaries (OpenAI `gpt-6-luna`, PII redacted, never sent automatically) |
@@ -88,6 +89,8 @@ cd backend; uv run uvicorn app.main:app --port 8000      # api
 cd backend; uv run python -m app.worker                  # worker: models, jobs, email poller
 cd frontend; npm run dev                                 # web app on http://localhost:3000
 ```
+
+**Simulated or real.** Every message shows which provider carried it: `simulated` (the customer simulator), `via Twilio` (real WhatsApp) or `via Gmail` (real email). The inbox sorts by **Newest** or by **Most urgent** (urgent first, then the longest-waiting customer).
 
 Sign in at http://localhost:3000 as `agent@unifycomm.local` with the password `SEED_AGENT_PASSWORD` (default `demo1234`). For a presentation, use `npm run build; npm start` instead of `npm run dev`: it is faster and uses far less memory.
 
@@ -160,7 +163,7 @@ Useful scripts (in `backend/`):
 |---|---|
 | `scripts.check_llm` | Real OpenAI drafts and a summary on fixed cases, for reviewing prompt changes (costs cents) |
 | `scripts.check_real_models` | Label latency with the real models (api + worker running) |
-| `scripts.load_test_data load` / `spread` / `measure` | Synthetic traffic on the simulator, backdated for the charts, and endpoint timings |
+| `scripts.load_test_data load` / `spread` / `measure` / `purge` | Synthetic traffic on the simulator, backdated for the charts, endpoint timings, and removing it again |
 | `scripts.export_openapi` | Writes `frontend/openapi.json`; then `npm run gen:api` in `frontend/` |
 
 ## Measured on the development laptop

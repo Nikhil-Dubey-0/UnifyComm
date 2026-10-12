@@ -4,6 +4,7 @@
   # wait until the worker has drained the jobs (analysis, acknowledgements, deliveries)
   uv run python -m scripts.load_test_data spread --days 7         # backdate for the charts
   uv run python -m scripts.load_test_data measure                 # needs the api running
+  uv run python -m scripts.load_test_data purge                   # delete only the load data
 
 `load` ingests through services/ingest.py on the simulator provider only (never a real
 channel), with at most 4 messages per conversation so no summary (OpenAI) is triggered.
@@ -141,6 +142,40 @@ async def spread(days: int) -> None:
         await engine.dispose()
 
 
+# Children first: messages.draft_id ↔ reply_drafts is a cycle, broken by clearing it.
+_PURGE = [
+    """CREATE TEMP TABLE gone ON COMMIT DROP AS
+       SELECT c.id FROM conversations c JOIN customers u ON u.id = c.customer_id
+       WHERE u.display_name LIKE 'Load %' AND u.verified IS FALSE""",
+    """DELETE FROM jobs WHERE (payload->>'conversation_id')::bigint IN (SELECT id FROM gone)
+          OR (payload->>'message_id')::bigint IN
+             (SELECT m.id FROM messages m WHERE m.conversation_id IN (SELECT id FROM gone))""",
+    """DELETE FROM compliance_checks WHERE message_id IN
+       (SELECT id FROM messages WHERE conversation_id IN (SELECT id FROM gone))""",
+    "UPDATE messages SET draft_id = NULL WHERE conversation_id IN (SELECT id FROM gone)",
+    "DELETE FROM reply_drafts WHERE conversation_id IN (SELECT id FROM gone)",
+    "DELETE FROM conversation_summaries WHERE conversation_id IN (SELECT id FROM gone)",
+    "DELETE FROM messages WHERE conversation_id IN (SELECT id FROM gone)",
+    "DELETE FROM conversations WHERE id IN (SELECT id FROM gone)",
+    "DELETE FROM customers WHERE display_name LIKE 'Load %' AND verified IS FALSE",
+]
+
+
+async def purge() -> None:
+    engine = make_engine(get_settings().database_url)
+    try:
+        async with make_sessionmaker(engine)() as session:
+            for statement in _PURGE:
+                await session.execute(text(statement))
+            left = await session.scalar(
+                text("SELECT count(*) FROM customers WHERE display_name LIKE 'Load %'")
+            )
+            await session.commit()
+        print(f"load-test data removed ({left} 'Load' customers left)")
+    finally:
+        await engine.dispose()
+
+
 async def timed(client: httpx.AsyncClient, url: str, rounds: int, **kwargs) -> tuple[float, float]:
     samples = []
     for _ in range(rounds):
@@ -196,6 +231,7 @@ def main() -> None:
     p_load.add_argument("--seed", type=int, default=7)
     p_spread = sub.add_parser("spread")
     p_spread.add_argument("--days", type=int, default=7)
+    sub.add_parser("purge")
     p_measure = sub.add_parser("measure")
     p_measure.add_argument("--api", default="http://localhost:8000")
     p_measure.add_argument("--rounds", type=int, default=30)
@@ -204,6 +240,8 @@ def main() -> None:
         asyncio.run(load(args.customers, args.seed))
     elif args.command == "spread":
         asyncio.run(spread(args.days))
+    elif args.command == "purge":
+        asyncio.run(purge())
     else:
         asyncio.run(measure(args.api, args.rounds))
 

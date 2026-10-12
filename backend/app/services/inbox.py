@@ -131,8 +131,12 @@ async def list_conversations(
     agent_id: int,
     cursor: str | None,
     limit: int,
+    sort: str = "waiting",
 ) -> Page[ConversationListItem]:
-    """Inbox order (§7.5): priority, then longest-waiting first, then id."""
+    """Inbox order (§7.5): priority, then longest-waiting first, then id. `sort="newest"`
+    orders by latest activity instead."""
+    if sort == "newest":
+        return await _list_newest(session, filters, agent_id=agent_id, cursor=cursor, limit=limit)
     rank = _priority_rank().label("rank")
     waiting = _waiting_since().label("waiting")
     stmt = (
@@ -153,8 +157,48 @@ async def list_conversations(
 
     rows = (await session.execute(stmt)).all()
     page, more = rows[:limit], len(rows) > limit
-    previews = await _last_messages(session, [r.Conversation.id for r in page])
+    next_cursor = None
+    if more:
+        last = page[-1]
+        waiting_value = _INFINITY if last.Conversation.last_inbound_at is None else last.waiting
+        next_cursor = _encode_cursor(last.rank, waiting_value, last.Conversation.id)
+    return await _page(session, page, next_cursor)
 
+
+async def _list_newest(
+    session: AsyncSession,
+    filters: ConversationFilters,
+    *,
+    agent_id: int,
+    cursor: str | None,
+    limit: int,
+) -> Page[ConversationListItem]:
+    stmt = (
+        select(Conversation, Customer)
+        .join(Customer, Customer.id == Conversation.customer_id)
+        .order_by(Conversation.last_activity_at.desc(), Conversation.id.desc())
+        .limit(limit + 1)
+    )
+    stmt = _apply_filters(stmt, filters, agent_id)
+    if cursor:
+        _, c_at, c_id = _decode_cursor(cursor)
+        stmt = stmt.where(
+            tuple_(Conversation.last_activity_at, Conversation.id)
+            < tuple_(cast(literal(c_at), TIMESTAMP(timezone=True)), literal(c_id))
+        )
+    rows = (await session.execute(stmt)).all()
+    page, more = rows[:limit], len(rows) > limit
+    next_cursor = None
+    if more:
+        last = page[-1].Conversation
+        next_cursor = _encode_cursor(0, last.last_activity_at, last.id)
+    return await _page(session, page, next_cursor)
+
+
+async def _page(
+    session: AsyncSession, page: list, next_cursor: str | None
+) -> Page[ConversationListItem]:
+    previews = await _last_messages(session, [r.Conversation.id for r in page])
     items = [
         ConversationListItem.model_validate(
             {
@@ -167,11 +211,6 @@ async def list_conversations(
         )
         for r in page
     ]
-    next_cursor = None
-    if more:
-        last = page[-1]
-        waiting_value = _INFINITY if last.Conversation.last_inbound_at is None else last.waiting
-        next_cursor = _encode_cursor(last.rank, waiting_value, last.Conversation.id)
     return Page[ConversationListItem](items=items, next_cursor=next_cursor)
 
 

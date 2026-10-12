@@ -236,7 +236,8 @@ export interface paths {
         /** List Customers */
         get: operations["list_customers_api_customers_get"];
         put?: never;
-        post?: never;
+        /** Create Customer */
+        post: operations["create_customer_api_customers_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -716,6 +717,18 @@ export interface components {
          * @enum {string}
          */
         ConversationStatus: "open" | "pending" | "resolved" | "closed";
+        /**
+         * CustomerCreate
+         * @description A customer registered by staff (KYC onboarding): phone and/or email, verified.
+         */
+        CustomerCreate: {
+            /** Display Name */
+            display_name: string;
+            /** Phone */
+            phone?: string | null;
+            /** Email */
+            email?: string | null;
+        };
         /** CustomerDetail */
         CustomerDetail: {
             customer: components["schemas"]["CustomerOut"];
@@ -1682,6 +1695,8 @@ export interface operations {
                 /** @description 'me', 'unassigned' or an agent id */
                 assignee?: string | null;
                 q?: string | null;
+                /** @description waiting: urgent and longest-waiting first (§7.5); newest: latest activity first */
+                sort?: "waiting" | "newest";
                 cursor?: string | null;
                 limit?: number;
             };
@@ -2268,6 +2283,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_CustomerWithContacts_"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_customer_api_customers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerOut"];
                 };
             };
             /** @description Unauthorized */

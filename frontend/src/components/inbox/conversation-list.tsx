@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNow } from "@/hooks/use-now";
 import type { ConversationListItem, ConversationStatus, Priority } from "@/lib/api/client";
 import { CATEGORY_QUEUES, PRIORITY_LABEL, timeAgo } from "@/lib/format";
-import { type ConversationFilters, useConversations } from "@/lib/queries";
+import { type ConversationFilters, type InboxSort, useConversations } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const STATUS_TABS: { value: ConversationStatus | "all"; label: string }[] = [
@@ -37,10 +37,27 @@ const STATUS_TABS: { value: ConversationStatus | "all"; label: string }[] = [
 
 const ANY = "any";
 
+const SORT_KEY = "unifycomm.inbox.sort";
+const SORTS: { value: InboxSort; label: string; hint: string }[] = [
+  { value: "newest", label: "Newest", hint: "Latest activity first" },
+  {
+    value: "waiting",
+    label: "Most urgent",
+    hint: "Urgent priority first, then the customers who have waited longest (support-desk order)",
+  },
+];
+
 export function ConversationList() {
   const params = useParams<{ conversationId?: string }>();
   const selectedId = params.conversationId ? Number(params.conversationId) : null;
 
+  const [sort, setSort] = useState<InboxSort>(() => {
+    try {
+      return localStorage.getItem(SORT_KEY) === "waiting" ? "waiting" : "newest";
+    } catch {
+      return "newest";
+    }
+  });
   const [status, setStatus] = useState<ConversationStatus | "all">("open");
   const [category, setCategory] = useState(ANY);
   const [priority, setPriority] = useState(ANY);
@@ -50,13 +67,14 @@ export function ConversationList() {
 
   const filters = useMemo<ConversationFilters>(
     () => ({
+      sort,
       status: status === "all" ? undefined : status,
       category: category === ANY ? undefined : category,
       priority: priority === ANY ? undefined : (priority as Priority),
       assignee: assignee === ANY ? undefined : assignee,
       q: q || undefined,
     }),
-    [status, category, priority, assignee, q],
+    [sort, status, category, priority, assignee, q],
   );
   const query = useConversations(filters);
   const items = query.data?.pages.flatMap((p) => p.items) ?? [];
@@ -68,11 +86,36 @@ export function ConversationList() {
       className="flex h-full w-[22rem] shrink-0 flex-col border-r bg-card"
     >
       <header className="space-y-3 border-b p-3">
-        <div className="flex items-baseline justify-between">
-          <h1 className="text-base font-semibold">Inbox</h1>
-          {query.isFetching && !query.isLoading && (
-            <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Refreshing" />
-          )}
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="flex items-center gap-2 text-base font-semibold">
+            Inbox
+            {query.isFetching && !query.isLoading && (
+              <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Refreshing" />
+            )}
+          </h1>
+          <div role="radiogroup" aria-label="Sort" className="flex rounded-md border p-0.5 text-[11px]">
+            {SORTS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={sort === option.value}
+                title={option.hint}
+                onClick={() => {
+                  setSort(option.value);
+                  try {
+                    localStorage.setItem(SORT_KEY, option.value);
+                  } catch {}
+                }}
+                className={cn(
+                  "rounded-[4px] px-2 py-0.5 text-muted-foreground",
+                  sort === option.value && "bg-primary text-primary-foreground",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div role="tablist" aria-label="Status" className="grid grid-cols-4 rounded-md bg-muted p-0.5">
           {STATUS_TABS.map((tab) => (

@@ -6,6 +6,7 @@ from app.api.deps import CurrentAgent, RulesDep, SessionDep, SettingsDep
 from app.schemas.common import ERROR_RESPONSES, Page
 from app.schemas.conversations import ComplianceCheckOut, ComplianceOut, MessageOut, SendResponse
 from app.schemas.customers import (
+    CustomerCreate,
     CustomerDetail,
     CustomerOut,
     CustomerWithContacts,
@@ -28,6 +29,16 @@ async def list_customers(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> Page[CustomerWithContacts]:
     return await customers.list_customers(session, q=q, cursor=cursor, limit=limit)
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_customer(
+    body: CustomerCreate, session: SessionDep, agent: CurrentAgent
+) -> CustomerOut:
+    customer = await customers.create_customer(
+        session, display_name=body.display_name, phone=body.phone, email=body.email, actor=agent
+    )
+    return CustomerOut.model_validate(customer)
 
 
 @router.get("/{customer_id}")
